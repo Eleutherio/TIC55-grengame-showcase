@@ -1,0 +1,225 @@
+@media (max-width: 1080px) {
+  .trilhas-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+    padding: 16px 12px 20px;
+    height: auto;
+    min-height: 100dvh;
+    overflow-y: visible;
+  }
+
+  .min-h-dvh {
+    padding-bottom: 0 !important;
+    background: #e6e7ea !important;
+  }
+
+  main.pb-10 {
+    padding-bottom: 0 !important;
+  }
+
+  .trilhas-title-wrap {
+    order: 1;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 4px;
+    flex: 0 0 auto;
+  }
+
+  .trilhas-title-card {
+    width: min(720px, 100%);
+    padding: 12px 14px;
+    border-radius: 14px;
+    align-self: center;
+  }
+
+  .trilhas-title {
+    font-size: clamp(16px, 4.2vw, 20px);
+    line-height: 1.2;
+  }
+
+  .trilhas-missions-area {
+    order: 2;
+    width: 100%;
+    height: calc((100vw - 24px) * 880 / 1510);
+    min-height: 0;
+    padding: 0 0 0 12px;
+    margin-left: 0;
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    overflow-x: visible;
+    overflow-y: visible;
+  }
+
+  .trilhas-missions-area.trilhas-missions-area--scroll {
+    height: calc((100vw - 24px) * 854 / 1510);
+    overflow-x: visible;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .trilha-stage-wrap {
+    width: 100%;
+    display: flex;
+    justify-content: flex-start;
+    margin: 0;
+  }
+
+  .trilha-stage {
+    margin: 0;
+  }
+
+  .leaderboard-panel {
+    order: 3;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-self: center;
+    gap: 10px;
+  }
+
+  .leaderboard-card--trilhas {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    margin: 0 auto;
+  }
+
+  .leaderboard-card {
+    width: 100%;
+    max-width: 100%;
+    min-height: 0;
+    max-height: none;
+    padding: clamp(10px, 3.5vw, 14px);
+  }
+
+  .leaderboard-scroll {
+    max-height: clamp(140px, 35vw, 210px);
+    min-height: clamp(120px, 30vw, 180px);
+  }
+
+  .leaderboard-item {
+    gap: clamp(8px, 2.4vw, 10px);
+    padding: clamp(8px, 2.8vw, 10px) clamp(10px, 3.2vw, 12px);
+  }
+
+  .leaderboard-rank {
+    width: clamp(34px, 9vw, 42px);
+    height: clamp(34px, 9vw, 42px);
+    font-size: clamp(12px, 3.4vw, 15px);
+  }
+
+  .leaderboard-title,
+  .leaderboard-name {
+    font-size: clamp(12px, 3.2vw, 14px);
+  }
+
+  .leaderboard-subtitle,
+  .leaderboard-tier {
+    font-size: clamp(11px, 3vw, 13px);
+  }
+
+  .trilhas-footer {
+    order: 4;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+    padding-bottom: 0;
+  }
+
+  .trilhas-footer-btn {
+    flex: 1 1 0;
+    min-width: 120px;
+    margin: 0;
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 1080px) and (min-width: 1040px) {
+  .trilhas-missions-area.trilhas-missions-area--scroll {
+    height: calc((100vw - 24px) * 854 / 1510 - 60px);
+  }
+}
+
+@media (max-width: 720px) {
+  .trilhas-wrapper {
+    gap: 14px;
+    padding: 14px 10px 18px;
+  }
+
+  .leaderboard-card {
+    border-radius: 14px;
+    padding: 14px 12px 16px;
+  }
+
+  .leaderboard-card--trilhas {
+    padding: 12px 12px 10px;
+  }
+
+  .trilhas-missions-area {
+    height: calc((100vw - 20px) * 880 / 1510);
+  }
+
+  .trilhas-missions-area.trilhas-missions-area--scroll {
+    height: calc((100vw - 20px) * 854 / 1510);
+  }
+
+  .trilha-stage-wrap {
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .trilhas-wrapper {
+    gap: 12px;
+    padding: 12px 8px 16px;
+  }
+
+  .trilhas-missions-area {
+    height: calc((100vw - 16px) * 880 / 1510);
+  }
+
+  .trilhas-missions-area.trilhas-missions-area--scroll {
+    height: calc((100vw - 16px) * 854 / 1510);
+  }
+
+  .trilha-stage-wrap {
+    margin: 0 auto;
+  }
+
+  .trilhas-footer {
+    gap: 10px;
+  }
+
+  .trilhas-footer-btn {
+    font-size: 13px;
+    min-width: 110px;
+  }
+}
+
+@media (max-width: 360px) {
+  .trilhas-missions-area {
+    height: calc((100vw - 12px) * 880 / 1510);
+  }
+
+  .trilhas-missions-area.trilhas-missions-area--scroll {
+    height: calc((100vw - 12px) * 854 / 1510);
+  }
+
+  .trilha-stage-wrap {
+    margin: 0 auto;
+  }
+}

@@ -1,0 +1,130 @@
+/* Fundo da página inteira (Roxo principal) */
+.recoverPage {
+    font-family: Arial, sans-serif;
+    background-color: #4B40CB; 
+    min-height: 100vh;
+    width: 100vw;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0;
+}
+
+/* Card Central (Azul escuro) */
+.recoverContainer {
+    background-color: #18217B; 
+    padding: 40px;
+    border-radius: 10px;
+    width: 480px;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+/* Logo: GrenGame */
+.logoTitle {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: white;
+    margin-bottom: 20px;
+    font-family: sans-serif;
+}
+
+/* Letras coloridas do Logo */
+.gLetter1 { color: #FFC800; } 
+.gLetter2 { color: #ff3333; } 
+
+/* Texto de instrução */
+.description {
+    color: #d1d1d1;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin-bottom: 20px;
+    text-align: left; 
+    width: 100%;
+}
+
+/* Label "Digite seu e-mail..." */
+.inputLabel {
+    display: block;
+    color: #d1d1d1;
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+    width: 100%;
+    text-align: left;
+}
+
+/* Campo de Input */
+.inputField {
+    width: 100%;
+    height: 40px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    border: none;
+    background-color: #f0f0f0; 
+    color: #333;
+    font-size: 0.9rem;
+    margin-bottom: 20px;
+    box-sizing: border-box;
+    outline: none;
+}
+
+.inputField::placeholder {
+    color: #999;
+}
+
+/* Botão Enviar (Amarelo) */
+.btnSend {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 4px;
+    background-color: #FFC800;
+    color: #333;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    margin-bottom: 20px;
+}
+
+.btnSend:hover {
+    background-color: #e6b800;
+}
+
+/* Link "Voltar ao login" */
+.backLink {
+    color: #FFC800;
+    text-decoration: none;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.backLink:hover {
+    text-decoration: underline;
+}
+
+.errorMessage {
+    color: #ff6b6b;
+    font-size: 0.85rem;
+    margin-bottom: 10px;
+    text-align: left;
+    width: 100%;
+}
+
+.successMessage {
+    color: #51cf66;
+    font-size: 0.85rem;
+    margin-bottom: 10px;
+    text-align: left;
+    width: 100%;
+}
+
+.btnSend:disabled {
+    background-color: #999;
+    cursor: not-allowed;
+}

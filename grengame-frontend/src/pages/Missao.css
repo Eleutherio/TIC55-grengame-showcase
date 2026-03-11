@@ -1,0 +1,144 @@
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  25% {
+    transform: translateY(-20px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+  75% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Estilos para modal de conclusão */
+.completion-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.completion-modal-card {
+  background-color: white;
+  border-radius: 16px;
+  padding: 40px;
+  max-width: 500px;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  animation: scaleIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.completion-modal-emoji {
+  font-size: 64px;
+  margin-bottom: 20px;
+  animation: bounce 0.6s ease-in-out;
+}
+
+.completion-modal-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #4CAF50;
+  margin-bottom: 16px;
+}
+
+.completion-modal-points {
+  font-size: 18px;
+  color: #666;
+  margin-bottom: 24px;
+  animation: slideUp 0.5s ease-out 0.2s both;
+}
+
+.completion-modal-points strong {
+  color: #FFC107;
+  font-size: 24px;
+  animation: pulse 1s ease-in-out infinite;
+  display: inline-block;
+}
+
+.completion-modal-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #999;
+  font-size: 14px;
+  animation: slideUp 0.5s ease-out 0.4s both;
+}
+
+.loading-dots {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* Responsividade mobile */
+@media (max-width: 768px) {
+  .completion-modal-card {
+    max-width: 90%;
+    padding: 30px 20px;
+  }
+
+  .completion-modal-emoji {
+    font-size: 48px;
+  }
+
+  .completion-modal-title {
+    font-size: 24px;
+  }
+
+  .completion-modal-points {
+    font-size: 16px;
+  }
+
+  .completion-modal-points strong {
+    font-size: 20px;
+  }
+}

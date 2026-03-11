@@ -1,0 +1,118 @@
+
+.loginPage {
+    font-family: Arial, sans-serif;
+    background-color: #4B40CB; /* Roxo principal */
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    width: 100vw;
+}
+
+/* Container do formulário */
+.loginContainer {
+    background-color: #18217B; /* Roxo/azul escuro do card */
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+    width: 480px;
+    display: flex;
+    flex-direction: column;
+}
+
+.title {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: #f0f0f0;
+    text-align: center;
+    margin-bottom: 25px;
+}
+
+/* Estilo dos campos de input */
+.inputGroup {
+    margin-bottom: 15px;
+}
+
+.inputGroup label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 0.9rem;
+}
+
+.inputGroup input {
+    width: 100%; /* Mantém 100% para preencher o container */
+    height: 37px; /* Conforme solicitado */
+    padding: 11px 13px; 
+
+    background-color: #FFFFFF; /* Cor branca solicitada */
+    color: #333; /* Cor do texto (para não ficar branco no branco) */
+
+    border-radius: 8px; /* Conforme solicitado */
+    border-width: 1px; /* Conforme solicitado */
+    border-style: solid; /* Adicionado para a borda aparecer */
+    border-color: #ccc; /* Cor de borda padrão (ajuste se necessário) */
+
+    box-sizing: border-box; /* MUITO importante para o width funcionar com padding */
+    font-size: 1rem;
+}
+
+/* Grupo de botões */
+.buttonGroup {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+    margin-bottom: 20px;
+}
+
+.buttonGroup button {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+/* Botão "Entrar" (Amarelo) */
+.btnPrimary {
+    background-color: #FFC800;
+    color: #333;
+}
+
+.btnPrimary:hover {
+    background-color: #FFC800;
+}
+
+
+/* Link "Esqueci minha senha" */
+.forgotPassword {
+    color: #FFC800;
+    text-decoration: none;
+    font-size: 0.9rem;
+    text-align: center;
+}
+
+.forgotPassword:hover {
+    text-decoration: underline;
+}
+
+/* Mensagem de erro */
+.errorMessage {
+    color: #FFCDD2; /* Vermelho claro para erro */
+    font-size: 0.9rem;
+    text-align: center;
+    margin-bottom: 15px;
+    min-height: 1.2em; /* Reserva espaço para a mensagem */
+}
+
+
+.gLetter1 {
+    color: #FFC800; 
+}
+
+.gLetter2 {
+    color: #fb2d2d; 
+}

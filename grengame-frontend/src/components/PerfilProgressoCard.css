@@ -1,0 +1,268 @@
+.perfilProgressoCard {
+  background: #f6f7fb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 24px 24px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.04);
+  width: auto;
+  max-width: 360px;
+  margin: 0;
+  flex: 0 0 320px;
+  text-align: center;
+  align-self: stretch;
+}
+
+.perfilProgressoCard.clickable {
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.16s ease;
+}
+
+.perfilProgressoCard.clickable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.1);
+}
+
+.perfilHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.perfilInfo {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.avatarRing {
+  width: 82px;
+  height: 82px;
+  border-radius: 50%;
+  background: #5a50ff;
+  display: grid;
+  place-items: center;
+  padding: 4px;
+}
+
+.avatarMock {
+  width: 68px;
+  height: 68px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid #c8d2ed;
+  background: radial-gradient(circle at 50% 45%, #d8dce9 0 40%, #e8ecf5 70%);
+}
+
+.avatarImage {
+  width: 68px;
+  height: 68px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  object-fit: cover;
+  background: #f0f0f0;
+}
+
+.avatarInitial {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #b23a00;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 28px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #ffffff;
+}
+
+.perfilNivel {
+  font-weight: 600;
+  color: #2e3561;
+}
+
+.perfilNivelBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #8a2f00;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.perfilNome {
+  font-weight: 700;
+  color: #233264;
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+.perfilXp {
+  color: #4b5c8d;
+  font-size: 14px;
+  margin: 0;
+}
+
+.perfilProgressBar {
+  width: 100%;
+  height: 12px;
+  background: #e1e6ee;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.perfilProgressFill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff214f 0%, #d90429 100%);
+}
+
+.perfilProgressMeta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: #40507a;
+  margin-top: 2px;
+}
+
+.perfilDivider {
+  height: 1px;
+  width: 100%;
+  background: #e2e8f0;
+  margin: 6px 0 4px;
+}
+
+.perfilStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.perfilStatCard {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 88px;
+}
+
+.statIcon {
+  font-size: 20px;
+  color: #f6ad00;
+}
+
+.statIcon.target {
+  color: #2563eb;
+}
+
+.statIcon.success {
+  color: #16a34a;
+}
+
+.statValue {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.statLabel {
+  font-size: 12px;
+  color: #475569;
+}
+
+.perfilSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.perfilTexto {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.errorText {
+  color: #c0392b;
+  font-weight: 600;
+  margin: 4px 0;
+  font-size: 14px;
+  text-align: center;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e6e6e6 37%, #f0f0f0 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+  border-radius: 6px;
+}
+
+.skeleton-line {
+  height: 12px;
+  width: 100%;
+}
+
+.skeleton-line.short {
+  width: 60%;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .perfilProgressoCard {
+    width: 100%;
+    max-width: none;
+    flex: 0 1 auto;
+    align-self: auto;
+    padding: 16px 16px 18px;
+  }
+
+  .perfilStatsGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .perfilStatCard {
+    padding: 10px;
+    min-height: 72px;
+  }
+
+  .perfilNome {
+    font-size: 18px;
+  }
+
+  .perfilXp {
+    font-size: 13px;
+  }
+
+  .statValue {
+    font-size: 16px;
+  }
+
+  .statLabel {
+    font-size: 11px;
+  }
+
+  .statIcon {
+    font-size: 18px;
+  }
+}
