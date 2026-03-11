@@ -1,0 +1,98 @@
+.course-challenges-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.course-challenges-badge::before {
+  content: "";
+  position: absolute;
+  inset: -120% 0;
+  width: 32px;
+  transform: translateX(-180%) rotate(20deg);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.7) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: courseChallengeShine 2.6s linear infinite;
+  z-index: 0;
+}
+
+.course-challenges-badge-label {
+  position: relative;
+  z-index: 1;
+}
+
+.course-challenges-badge.is-available {
+  color: #ffffff;
+  border-color: #0f7a44;
+  background: linear-gradient(135deg, #0b7a41 0%, #16a34a 58%, #f6b500 125%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16) inset,
+    0 8px 18px rgba(22, 163, 74, 0.34);
+  animation: courseChallengePulse 2.1s ease-in-out infinite;
+}
+
+.course-challenges-badge.is-completed {
+  color: #ffffff;
+  border-color: #0f7a44;
+  background: linear-gradient(135deg, #0b7a41 0%, #16a34a 58%, #f6b500 125%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16) inset;
+}
+
+.course-challenges-badge.is-completed::before,
+.course-challenges-badge.is-none::before {
+  animation: none;
+  opacity: 0;
+}
+
+.course-challenges-badge.is-none {
+  color: #eafff1;
+  border-color: rgba(15, 122, 68, 0.72);
+  background: linear-gradient(
+    135deg,
+    rgba(11, 122, 65, 0.62) 0%,
+    rgba(22, 163, 74, 0.62) 58%,
+    rgba(246, 181, 0, 0.48) 125%
+  );
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+}
+
+@keyframes courseChallengePulse {
+  0%,
+  100% {
+    transform: translateY(0);
+    filter: saturate(1);
+  }
+  50% {
+    transform: translateY(-1px);
+    filter: saturate(1.2);
+  }
+}
+
+@keyframes courseChallengeShine {
+  0% {
+    transform: translateX(-180%) rotate(20deg);
+  }
+  100% {
+    transform: translateX(340%) rotate(20deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .course-challenges-badge,
+  .course-challenges-badge::before {
+    animation: none;
+  }
+}

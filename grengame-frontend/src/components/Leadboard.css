@@ -1,0 +1,249 @@
+.leaderboard-card {
+  margin-top: 0;
+  background: #ffffff;
+  border: 1px solid #dfe4fb;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
+  width: 340px;
+  max-width: 100%;
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+  max-height: 420px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.leaderboard-header {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+
+.leaderboard-title {
+  margin: 0;
+  color: #1b1c55;
+  font-weight: 800;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leaderboard-subtitle {
+  margin: 0;
+  color: #3c3ad8;
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+.leaderboard-scroll {
+  display: grid;
+  gap: 8px;
+  max-height: 210px;
+  min-height: 210px;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: #d7def8 transparent;
+  flex: 1;
+  align-content: start;
+}
+
+.leaderboard-bottom {
+  margin-top: auto;
+  display: grid;
+  gap: 8px;
+}
+
+.leaderboard-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  background: #f2f4f7;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.leaderboard-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #f6b500;
+  border: 1px solid rgba(27, 28, 85, 0.15);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.leaderboard-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.leaderboard-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: #1b1c55;
+  font-weight: 800;
+  font-size: 14px;
+  text-transform: uppercase;
+}
+
+.leaderboard-item.highlight {
+  background: #f9fafb;
+}
+
+.leaderboard-item-user {
+  background: #eef1fb;
+  border: 1px solid #f6b500;
+}
+
+.leaderboard-empty {
+  margin: 0;
+  padding: 12px;
+  text-align: center;
+  color: #1b1c55;
+  font-weight: 700;
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+}
+
+.leaderboard-error {
+  margin: 0;
+  padding: 12px;
+  text-align: center;
+  color: #d90429;
+  font-weight: 800;
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+}
+
+.leaderboard-body {
+  display: grid;
+  gap: 2px;
+}
+
+.leaderboard-name {
+  margin: 0;
+  color: #1b1c55;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.leaderboard-tier {
+  margin: 0;
+  color: #6b7280;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.leaderboard-badge-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.leaderboard-position-value {
+  min-width: 14px;
+  color: #d90429;
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1;
+  text-align: center;
+}
+
+.leaderboard-earned-badge {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  align-self: center;
+  position: relative;
+  overflow: visible;
+  outline: none;
+}
+
+.leaderboard-earned-badge-image {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  object-position: center;
+  display: block;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.22));
+}
+
+.leaderboard-earned-badge-error {
+  font-size: 11px;
+  font-weight: 700;
+  color: #d90429;
+  white-space: nowrap;
+  align-self: center;
+}
+
+.leaderboard-floating-tooltip {
+  position: fixed;
+  width: min(270px, calc(100vw - 20px));
+  background: linear-gradient(135deg, #0b7a41 0%, #16a34a 58%, #f6b500 125%);
+  color: #ffffff;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  padding: 10px 12px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.leaderboard-floating-tooltip p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+}
+
+.leaderboard-floating-tooltip p + p {
+  margin-top: 6px;
+}
+
+.leaderboard-divider {
+  display: flex;
+  justify-content: center;
+  color: #1b1c55;
+  font-weight: 700;
+}
+
+.leaderboard-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.leaderboard-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.leaderboard-scroll::-webkit-scrollbar-thumb {
+  background: #d7def8;
+  border-radius: 999px;
+}

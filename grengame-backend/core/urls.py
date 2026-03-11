@@ -1,0 +1,97 @@
+from django.urls import path
+from .views import (
+    LoginView, 
+    LogoutView, 
+    RefreshTokenView, 
+    UserMeView, 
+    UserStatsView,
+    UserUpdateView, 
+    GameListCreateView, 
+    GameRetrieveUpdateDestroyView, 
+    GameCategoriesView,
+    GameProgressCreateView,
+    GameProgressListView,
+    GameProgressUpdateView,
+    RecalculateProgressView,
+    MissionListCreateView,
+    MissionRetrieveUpdateDestroyView,
+    MissionCompletionsListView,
+    MissionCompletionsStartView,
+    MissionCompletionsCompleteView,
+    MissionValidateView,
+    GlobalLeaderboardView,
+    CourseLeaderboardView,
+    CourseTrailView,
+    PlayerHistoryView,
+    ProgressSummaryView,
+    UserStatsView,
+    PasswordResetRequestView,
+    PasswordResetVerifyView,
+    PasswordResetConfirmView,
+    DashboardActiveUsersView,
+    DashboardAverageTimeView,
+    DashboardCompletionRateView,
+    DashboardAverageXpView,
+    DashboardCompletedMissionsView,
+    DashboardTopCollaboratorsView,
+    GameBadgeConfigView,
+)
+
+from .user_import_views import (
+    AtualizarUsuarioView,
+    CriarUsuarioView,
+    ImportarUsuariosView,
+    RemoverUsuarioView,
+    UsuarioListView,
+)
+
+app_name = 'core'
+
+urlpatterns = [
+    path('login/', LoginView.as_view(), name='login'),
+    path('logout/', LogoutView.as_view(), name='logout'),
+    path('refresh/', RefreshTokenView.as_view(), name='refresh'),
+    path('me/', UserMeView.as_view(), name='user_me'),
+    path('me/stats/', UserStatsView.as_view(), name='user_stats'),
+    path('update/', UserUpdateView.as_view(), name='user_update'),
+
+    path('usuarios/', UsuarioListView.as_view(), name='usuarios-list'),
+    path('usuarios/importacao/', ImportarUsuariosView.as_view(), name='usuarios-importacao'),
+    path('usuarios/remover/', RemoverUsuarioView.as_view(), name='usuarios-remover'),
+    path('usuarios/criar/', CriarUsuarioView.as_view(), name='usuarios-criar'),
+    path('usuarios/atualizar/', AtualizarUsuarioView.as_view(), name='usuarios-atualizar'),
+
+    path('games/', GameListCreateView.as_view(), name='course-list-create'), 
+    path('games/<int:pk>/', GameRetrieveUpdateDestroyView.as_view(), name='course-detail'), 
+    path('games/categories/', GameCategoriesView.as_view(), name='course-categories'),
+    path('games/<int:game_id>/badge-config/', GameBadgeConfigView.as_view(), name='game-badge-config'),
+    path('games/<int:course_id>/trilha/', CourseTrailView.as_view(), name='course-trail'),
+    
+    path('progress/', GameProgressCreateView.as_view(), name='progress-create'),
+    path('progress/list/', GameProgressListView.as_view(), name='progress-list'),
+    path('progress/<int:pk>/', GameProgressUpdateView.as_view(), name='progress-update'),
+    path('progress/recalculate/', RecalculateProgressView.as_view(), name='progress-recalculate'),
+    path('progress/summary/', ProgressSummaryView.as_view(), name='progress-summary'),
+
+    path('missoes/', MissionListCreateView.as_view(), name='mission-list-create'),
+    path('missoes/<int:pk>/', MissionRetrieveUpdateDestroyView.as_view(), name='mission-detail'),
+    path('missoes/minhas/', MissionCompletionsListView.as_view(), name='mission-completions-list'),
+    path('missoes/<int:mission_id>/iniciar/', MissionCompletionsStartView.as_view(), name='mission-completions-start'),
+    path('missoes/<int:mission_id>/completar/', MissionCompletionsCompleteView.as_view(), name='mission-completions-complete'),
+    path('missoes/<int:mission_id>/validar/', MissionValidateView.as_view(), name='mission-validate'),
+
+    path('ranking/', GlobalLeaderboardView.as_view(), name='ranking-global'),
+    path('games/<int:game_id>/ranking/', CourseLeaderboardView.as_view(), name='ranking-course'),
+    path('players/history/', PlayerHistoryView.as_view(), name='player-history'),
+
+    path('password-reset/request/', PasswordResetRequestView.as_view(), name='password-reset-request'),
+    path('password-reset/verify/', PasswordResetVerifyView.as_view(), name='password-reset-verify'),
+    path('password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
+
+    path('dashboard/usuarios-ativos/', DashboardActiveUsersView.as_view(), name='dashboard-active-users'),
+    path('dashboard/tempo-medio/', DashboardAverageTimeView.as_view(), name='dashboard-average-time'),
+    path('dashboard/taxa-conclusao/', DashboardCompletionRateView.as_view(), name='dashboard-completion-rate'),
+    path('dashboard/xp-medio/', DashboardAverageXpView.as_view(), name='dashboard-average-xp'),
+    path('dashboard/missoes-concluidas/', DashboardCompletedMissionsView.as_view(), name='dashboard-completed-missions'),
+    path('dashboard/ranking-colaboradores/', DashboardTopCollaboratorsView.as_view(), name='dashboard-top-collaborators'),
+]

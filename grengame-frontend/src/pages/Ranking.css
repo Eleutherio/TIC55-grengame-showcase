@@ -1,0 +1,682 @@
+.ranking-page {
+  min-height: 100vh;
+  width: 100%;
+  background: #ffffff;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+}
+
+.ranking-container {
+  width: 100%;
+  max-width: none;
+  display: flex;
+  justify-content: flex-start;
+  align-items: stretch;
+}
+
+.ranking-card {
+  background: #4b40cb;
+  border-radius: 20px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 64px);
+  max-height: none;
+  box-sizing: border-box;
+  overflow: hidden;
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.ranking-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
+  width: 100%;
+  padding-bottom: 12px;
+}
+
+.ranking-header-text {
+  display: grid;
+  gap: 6px;
+}
+
+.ranking-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.ranking-search-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+}
+
+.ranking-search-field {
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 500;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.ranking-search-field:focus {
+  outline: none;
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.ranking-search-field::placeholder {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.ranking-search-error {
+  margin: 0;
+  font-size: 12px;
+  color: #ffffff;
+  font-weight: 400;
+  min-height: 16px;
+}
+
+.ranking-title {
+  margin: 0;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 32px;
+  border-radius: 0;
+}
+
+.ranking-subtitle {
+  margin: 0;
+  color: #ffffff;
+}
+.ranking-subtitle-brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  margin-left: 4px;
+  font-family: "FonteTitulos", "FonteSite", sans-serif;
+  font-weight: 600;
+}
+
+.ranking-brand-letter {
+  display: inline-flex;
+}
+
+.ranking-brand-yellow {
+  color: var(--color-amarelo);
+}
+
+.ranking-brand-red {
+  color: var(--color-vermelho-forte);
+}
+
+/* Primeiro item com cantos superiores arredondados */
+.ranking-scroll .ranking-item:first-child {
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+/* Último item com cantos inferiores arredondados */
+.ranking-scroll .ranking-item:last-child {
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 16px;
+}
+
+.ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+.ranking-columns {
+  display: grid;
+  grid-template-columns: 120px minmax(240px, 1fr) 120px 140px;
+  gap: 20px;
+  align-items: center;
+  color: #ffffff;
+  opacity: 0.9;
+  width: 100%;
+  max-width: none;
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 0 20px 2px 20px;
+}
+
+.ranking-columns span {
+  color: #ffffff;
+}
+
+.ranking-columns .col-badge {
+  justify-self: center;
+  text-align: center;
+}
+
+.ranking-columns .col-points {
+  justify-self: end;
+  text-align: right;
+}
+
+.ranking-columns .col-rank {
+  justify-self: center;
+  text-align: center;
+}
+
+.ranking-columns .col-name {
+  justify-self: start;
+  text-align: left;
+}
+
+.ranking-scroll {
+  display: grid;
+  gap: 0;
+  flex: 1;
+  overflow-y: auto;
+  max-height: min(calc(5 * 112px + 16px), 62vh);
+  padding-right: 8px;
+  padding-bottom: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: #d7def8 transparent;
+  align-content: start;
+}
+
+.ranking-bottom {
+  padding-top: 10px;
+}
+
+@media (max-width: 1500px) {
+  .ranking-columns {
+    grid-template-columns: 104px minmax(220px, 1fr) 100px 120px;
+    gap: 12px;
+  }
+
+  .ranking-item {
+    grid-template-columns: 104px minmax(220px, 1fr) 100px 120px;
+    gap: 14px;
+  }
+
+  .ranking-name {
+    max-width: 220px;
+  }
+
+  .ranking-badge {
+    width: 92px;
+    min-height: 64px;
+  }
+}
+
+.ranking-item {
+  display: grid;
+  grid-template-columns: 120px minmax(240px, 1fr) 120px 140px;
+  align-items: center;
+  gap: 20px;
+  background: #ffffff;
+  padding: 16px 20px;
+  transition: all 0.2s ease;
+}
+
+.ranking-item:hover {
+  background: #f3f4f6;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.ranking-rank {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: transparent;
+  color: #1b1c55;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  font-size: 24px;
+  flex-shrink: 0;
+  justify-self: center;
+}
+
+/* Tamanho maior apenas para as medalhas (top 3) */
+.ranking-rank.medal-ouro,
+.ranking-rank.medal-prata,
+.ranking-rank.medal-bronze {
+  font-size: 36px;
+}
+
+.ranking-item.highlight {
+  background: #ffffff;
+  border: 2px solid #fef3c7;
+  border-radius: 16px;
+}
+
+.ranking-item.highlight .ranking-badge {
+  min-width: 92px;
+  min-height: 60px;
+}
+
+.ranking-item-user {
+  background: #eef1fb;
+  border: 2px solid #667eea;
+}
+
+/* Borda inferior fina para separar todos os itens */
+.ranking-item,
+.ranking-item-user,
+.ranking-item.highlight {
+  border-bottom: 1px solid #4b40cb;
+}
+
+.ranking-empty {
+  margin: 0;
+  padding: 40px 20px;
+  text-align: center;
+  color: #1b1c55;
+  font-weight: 700;
+  font-size: 16px;
+  min-height: 300px;
+  display: grid;
+  place-items: center;
+}
+
+/* Erro inline na área branca, sem modal */
+.ranking-error-inline {
+  margin: 0;
+  padding: 40px 20px;
+  text-align: center;
+  background: #ffffff;
+  min-height: 240px;
+  display: grid;
+  gap: 12px;
+  place-items: center;
+  border-radius: 12px;
+}
+
+.ranking-error-inline-text {
+  margin: 0;
+  color: #111827; /* preto */
+  font-weight: 400; /* sem negrito */
+  font-size: 15px;
+}
+
+.ranking-error-inline-actions {
+  display: flex;
+  justify-content: center;
+}
+
+/* Placeholder para manter fundo branco atrás do modal de erro */
+.ranking-loading {
+  margin: 0;
+  padding: 40px 20px;
+  text-align: center;
+  color: #1b1c55;
+  font-weight: 700;
+  font-size: 16px;
+  min-height: 240px;
+  display: grid;
+  gap: 12px;
+  place-items: center;
+}
+
+.ranking-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(75, 64, 203, 0.18);
+  border-top-color: #4b40cb;
+  border-radius: 50%;
+  animation: rankingSpin 0.9s linear infinite;
+}
+
+.ranking-loading-text {
+  margin: 0;
+  color: #1b1c55;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.ranking-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  width: 100%;
+  justify-self: start;
+}
+
+.ranking-name {
+  margin: 0;
+  color: #1b1c55;
+  font-weight: 800;
+  font-size: 18px;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ranking-points {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+  justify-self: end;
+  align-items: center;
+}
+
+.ranking-points-value {
+  margin: 0;
+  color: #1b1c55;
+  font-weight: 900;
+  font-size: 20px;
+}
+
+.ranking-points-label {
+  margin: 0;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.ranking-item.medal-ouro .ranking-points-value,
+.ranking-item.medal-prata .ranking-points-value,
+.ranking-item.medal-bronze .ranking-points-value {
+  animation: rankingPointsPulse 2.8s ease-in-out infinite;
+  color: var(--color-amarelo);
+}
+
+@keyframes rankingSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes rankingPointsPulse {
+  0%,
+  100% {
+    color: var(--color-amarelo);
+  }
+  25% {
+    color: var(--color-azul-forte);
+  }
+  50% {
+    color: var(--color-vermelho-forte);
+  }
+  75% {
+    color: var(--color-roxo-forte);
+  }
+}
+
+.ranking-badge {
+  width: 92px;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  text-align: center;
+}
+
+.ranking-item-top-three .ranking-badge {
+  width: 92px;
+}
+
+.ranking-highest-badge-trigger {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: visible;
+  outline: none;
+}
+
+.ranking-highest-badge-image {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  object-position: center;
+  display: block;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.24));
+}
+
+.ranking-highest-badge-error {
+  font-size: 11px;
+  font-weight: 700;
+  color: #d90429;
+  white-space: nowrap;
+}
+
+.ranking-highest-badge-tooltip {
+  position: fixed;
+  width: min(270px, calc(100vw - 20px));
+  background: linear-gradient(135deg, #0b7a41 0%, #16a34a 58%, #f6b500 125%);
+  color: #ffffff;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  padding: 10px 12px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.ranking-highest-badge-tooltip p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+}
+
+.ranking-highest-badge-tooltip p + p {
+  margin-top: 6px;
+}
+
+.ranking-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  color: #18217b;
+  font-weight: 900;
+  font-size: 16px;
+  border: 2px solid rgba(25, 25, 25, 0.08);
+  overflow: hidden;
+}
+
+.ranking-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 16px;
+  text-transform: uppercase;
+  border-radius: 50%;
+}
+
+.ranking-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+.ranking-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.ranking-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ranking-scroll::-webkit-scrollbar-thumb {
+  background: #d7def8;
+  border-radius: 999px;
+}
+
+.ranking-scroll::-webkit-scrollbar-thumb:hover {
+  background: #c5cef5;
+}
+
+.ranking-item-top-three,
+.ranking-item-top-three:hover {
+  background: #d0d3dd;
+}
+
+@media (max-width: 768px) {
+  .ranking-page {
+    padding: 20px 16px;
+  }
+  .ranking-columns {
+    display: none;
+  }
+
+  .ranking-card {
+    padding: 24px 16px;
+    border-radius: 16px;
+    min-height: calc(100vh - 40px);
+  }
+
+  .ranking-header {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .ranking-search {
+    max-width: none;
+    width: 100%;
+  }
+
+  .ranking-title {
+    font-size: 24px;
+  }
+
+  .ranking-subtitle {
+    font-size: 14px;
+  }
+
+  .ranking-item {
+    grid-template-columns: 64px minmax(0, 1fr) 56px 72px;
+    gap: 10px;
+    padding: 10px 8px;
+  }
+
+  .ranking-rank {
+    width: 48px;
+    height: 48px;
+    font-size: 16px;
+    justify-self: center;
+  }
+
+  .ranking-rank.medal-ouro,
+  .ranking-rank.medal-prata,
+  .ranking-rank.medal-bronze {
+    font-size: 28px;
+  }
+
+  .ranking-avatar {
+    width: 44px;
+    height: 44px;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .ranking-name-cell {
+    gap: 8px;
+  }
+
+  .ranking-name {
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  .ranking-badge {
+    width: 56px;
+    min-height: auto;
+    justify-self: center;
+    justify-content: center;
+  }
+
+  .ranking-item.highlight {
+    gap: 10px;
+    padding: 8px 8px;
+  }
+
+  .ranking-item.highlight .ranking-badge {
+    width: 56px;
+    min-width: 56px;
+    min-height: auto;
+  }
+
+  .ranking-highest-badge-trigger {
+    width: 34px;
+    height: 34px;
+  }
+
+  .ranking-highest-badge-image {
+    width: 30px;
+    height: 30px;
+  }
+
+  .ranking-highest-badge-tooltip {
+    width: min(250px, calc(100vw - 16px));
+  }
+
+  .ranking-points {
+    justify-self: end;
+    font-size: 13px;
+  }
+
+  .ranking-points-value {
+    font-size: 14px;
+  }
+
+  .ranking-points-label {
+    font-size: 10px;
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ranking-item.medal-ouro .ranking-points-value,
+  .ranking-item.medal-prata .ranking-points-value,
+  .ranking-item.medal-bronze .ranking-points-value {
+    animation: none;
+    color: var(--color-amarelo);
+  }
+}
+
+.ranking-refresh-btn {
+  appearance: none;
+  border: none;
+  border-radius: 999px;
+  background: #4b40cb;
+  color: #ffffff;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ranking-refresh-btn:hover {
+  background: #3f37b6;
+}

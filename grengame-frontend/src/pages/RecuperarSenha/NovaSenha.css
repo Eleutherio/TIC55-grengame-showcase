@@ -1,0 +1,196 @@
+.resetPage {
+    font-family: Arial, sans-serif;
+    background-color: #4d4add;
+    min-height: 100vh;
+    width: 100vw;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0;
+}
+
+/* Card Central */
+.resetContainer {
+    background-color: #1a1a50;
+    padding: 40px;
+    border-radius: 10px;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+/* Logo */
+.logoTitle {
+    font-size: 2, 5rem;
+    font-weight: bold;
+    color: white;
+    margin-bottom: 15px;
+    font-family: sans-serif;
+}
+
+.gLetter1 {
+    color: #FFC800;
+}
+
+.gLetter2 {
+    color: #ff3333;
+}
+
+/* Texto descritivo */
+.description {
+    color: #d1d1d1;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    margin-bottom: 20px;
+    width: 100%;
+    text-align: center;
+}
+
+/* Label genérico */
+.inputLabel {
+    display: block;
+    color: #d1d1d1;
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+    width: 100%;
+    text-align: left;
+}
+
+/* --- ÁREA DO CÓDIGO DE VERIFICAÇÃO --- */
+.otpContainer {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+.otpBox {
+    width: 45px;
+    height: 45px;
+    border-radius: 6px;
+    border: none;
+    text-align: center;
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #ff3333;
+    background-color: white;
+    outline: none;
+}
+
+/* Link de Reenviar */
+.resendContainer {
+    width: 100%;
+    text-align: center;
+    font-size: 0.75rem;
+    color: #ccc;
+    margin-bottom: 20px;
+}
+
+.resendLink {
+    color: #FFC800;
+    text-decoration: none;
+    margin-left: 5px;
+    cursor: pointer;
+}
+
+.resendLink:hover {
+    text-decoration: underline;
+}
+
+/* --- INPUTS DE SENHA --- */
+.passwordInput {
+    width: 100%;
+    height: 40px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    border: none;
+    background-color: #f0f0f0;
+    color: #333;
+    font-size: 0.9rem;
+    margin-bottom: 5px;
+    /* Espaço menor para caber o texto de ajuda */
+    box-sizing: border-box;
+    outline: none;
+}
+
+.helperText {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font-size: 0.7rem;
+    color: #aaa;
+    margin-bottom: 15px;
+}
+
+/* Botão Principal */
+.btnReset {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 4px;
+    background-color: #FFC800;
+    color: #333;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    margin-top: 10px;
+    margin-bottom: 20px;
+}
+
+.btnReset:hover {
+    background-color: #e6b800;
+}
+
+/* Link Voltar */
+.backLink {
+    color: #FFC800;
+    text-decoration: none;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.backLink:hover {
+    text-decoration: underline;
+}
+
+.errorMessage {
+    color: #ff6b6b;
+    font-size: 0.85rem;
+    margin-bottom: 10px;
+    text-align: left;
+    width: 100%;
+}
+
+.successMessage {
+    color: #4ade80;
+    font-size: 0.85rem;
+    margin-bottom: 10px;
+    text-align: left;
+    width: 100%;
+}
+
+.btnReset:disabled {
+    background-color: #999;
+    cursor: not-allowed;
+}
+
+.resendLink {
+    background: none;
+    border: none;
+    color: #FFC800;
+    cursor: pointer;
+    font-size: inherit;
+}
+
+.resendLink:disabled {
+    color: #999;
+    cursor: not-allowed;
+}
