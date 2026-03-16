@@ -1,6 +1,12 @@
 
 # projeto-grendene
-Desenvolvimento e implantação de uma plataforma de gamificação para treinamentos corporativos, visando engajar, motivar e capacitar os colaboradores de uma grande indústria brasileira. A solução utilizará elementos de jogos (missões, desafios, rankings, recompensas) para transformar o aprendizado em uma experiência dinâmica, colaborativa e divertida, promovendo maior retenção de conhecimento e participação ativa dos funcionários.
+GrenGame é uma plataforma gamificada para treinamentos corporativos.
+
+O projeto foi originalmente desenvolvido durante a Residência TIC55, em um projeto acadêmico realizado em parceria com a empresa Grendene.
+
+A solução utilizará elementos de gamificação (missões, desafios, rankings, recompensas) para transformar o aprendizado em uma experiência dinâmica, colaborativa e divertida, promovendo maior retenção de conhecimento e participação ativa dos funcionários.
+
+Esta versão do repositório é disponibilizada apenas para fins de portfólio e estudo.
 
 ---
 
@@ -17,7 +23,7 @@ Desenvolvimento e implantação de uma plataforma de gamificação para treiname
 
 1. **Clone o repositório ou atualize sua branch:**
 	```bash
-	git pull origin dev
+	git pull origin main
 	```
 
 2. **No terminal, na raiz do projeto (onde está o `docker-compose.yml`), rode:**
