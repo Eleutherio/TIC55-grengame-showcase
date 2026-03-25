@@ -10,27 +10,10 @@ export type DadosUsuarioManual = {
 type AdicionarUsuarioModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  onSalvar: (usuario: DadosUsuarioManual) => void;
+  onSalvar: (usuario: DadosUsuarioManual) => void | Promise<void>;
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-const ALLOWED_EMAIL_DOMAIN = "grendene.com.br";
-
-function getEmailDomainError(rawEmail: string): string | null {
-  const trimmed = rawEmail.trim().toLowerCase();
-  if (!trimmed.includes("@")) {
-    return null;
-  }
-  const parts = trimmed.split("@");
-  const domain = parts[1] ?? "";
-  if (!domain) {
-    return null;
-  }
-  if (domain !== ALLOWED_EMAIL_DOMAIN) {
-    return `Somente e-mails @${ALLOWED_EMAIL_DOMAIN} são permitidos.`;
-  }
-  return null;
-}
 
 export default function AdicionarUsuarioModal({ isOpen, onClose, onSalvar }: AdicionarUsuarioModalProps) {
   const [nome, setNome] = useState("");
@@ -39,7 +22,6 @@ export default function AdicionarUsuarioModal({ isOpen, onClose, onSalvar }: Adi
   const [role, setRole] = useState<"admin" | "user">("user");
   const [erro, setErro] = useState("");
   const [isSalvando, setIsSalvando] = useState(false);
-  const emailDomainError = getEmailDomainError(email);
 
   useEffect(() => {
     if (!isOpen) {
@@ -56,7 +38,7 @@ export default function AdicionarUsuarioModal({ isOpen, onClose, onSalvar }: Adi
     return null;
   }
 
-  const handleSalvar = () => {
+  const handleSalvar = async () => {
     const nomeTrimmed = nome.trim();
     const emailTrimmed = email.trim().toLowerCase();
     const senhaTrimmed = senha.trim();
@@ -71,12 +53,6 @@ export default function AdicionarUsuarioModal({ isOpen, onClose, onSalvar }: Adi
       return;
     }
 
-    const domainError = getEmailDomainError(emailTrimmed);
-    if (domainError) {
-      setErro(domainError);
-      return;
-    }
-
     if (!senhaTrimmed || senhaTrimmed.length < 6) {
       setErro("Senha deve ter pelo menos 6 caracteres.");
       return;
@@ -85,8 +61,16 @@ export default function AdicionarUsuarioModal({ isOpen, onClose, onSalvar }: Adi
     setErro("");
     setIsSalvando(true);
     try {
-      onSalvar({ nome: nomeTrimmed, email: emailTrimmed, senha: senhaTrimmed, role });
+      await Promise.resolve(
+        onSalvar({ nome: nomeTrimmed, email: emailTrimmed, senha: senhaTrimmed, role }),
+      );
       onClose();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Não foi possível adicionar o usuário. Tente novamente.";
+      setErro(message);
     } finally {
       setIsSalvando(false);
     }
@@ -130,12 +114,9 @@ export default function AdicionarUsuarioModal({ isOpen, onClose, onSalvar }: Adi
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            placeholder="nome.sobrenome@grendene.com.br"
+            placeholder="nome.sobrenome@gmail.com"
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-[#ffc800] focus:outline-none focus:ring-2 focus:ring-[#ffc800]"
           />
-          {emailDomainError && (
-            <p className="mt-1 text-xs font-medium text-red-600">{emailDomainError}</p>
-          )}
 
           <label className="block text-sm font-medium text-gray-700" htmlFor="senha-manual">
             Senha provisória

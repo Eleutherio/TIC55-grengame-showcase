@@ -12,7 +12,6 @@ export type ResultadoValidacaoConteudo = {
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-const DOMINIO_PERMITIDO = "@grendene.com.br";
 
 const isEmptyValue = (value: unknown) => {
   if (value === null || value === undefined) {
@@ -63,15 +62,6 @@ export function validarConteudoImportacao(rows: CSVRow[]): ResultadoValidacaoCon
       resultado.erros.push({
         linha,
         motivo: "Formato de e-mail inválido.",
-        email,
-      });
-      return;
-    }
-
-    if (!email.endsWith(DOMINIO_PERMITIDO)) {
-      resultado.erros.push({
-        linha,
-        motivo: `Domínio de e-mail não permitido. Use ${DOMINIO_PERMITIDO}.`,
         email,
       });
       return;

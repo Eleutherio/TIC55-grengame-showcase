@@ -22,13 +22,13 @@ const renderPage = () => {
   return render(<RouterProvider router={router} />);
 };
 
-const mockFetch = (data: any) => {
+const mockFetch = <T,>(data: T) => {
   global.fetch = vi.fn(() =>
     Promise.resolve({
       ok: true,
       json: () => Promise.resolve(data),
     } as Response)
-  ) as any;
+  ) as unknown as typeof fetch;
 };
 
 describe("AdministrarGames", () => {
@@ -50,24 +50,17 @@ describe("AdministrarGames", () => {
 
   it("valida nome obrigatório", async () => {
     renderPage();
-    await waitFor(() =>
-      screen.getByRole("button", { name: /Salvar e prosseguir/i })
-    );
-    
-    fireEvent.click(
-      screen.getByRole("button", { name: /Salvar e prosseguir/i })
-    );
-    
-    await waitFor(() => {
-      expect(screen.getByText(/Preencha o nome do game/i)).toBeInTheDocument();
+    const saveButton = await screen.findByRole("button", {
+      name: /Salvar e prosseguir/i,
     });
+    expect(saveButton).toBeDisabled();
   });
 
   it("preenche formulário", async () => {
     renderPage();
-    await waitFor(() => screen.getByPlaceholderText(/Sustentabilidade na Grendene/i));
+    await waitFor(() => screen.getByPlaceholderText(/Missão Sustentável/i));
 
-    const nameInput = screen.getByPlaceholderText(/Sustentabilidade na Grendene/i);
+    const nameInput = screen.getByPlaceholderText(/Missão Sustentável/i);
     fireEvent.change(nameInput, { target: { value: "Novo Game" } });
 
     expect(nameInput).toHaveValue("Novo Game");
@@ -121,11 +114,13 @@ describe("AdministrarGames", () => {
 
     await waitFor(() => screen.getByText("Game 1"));
 
-    const deleteBtn = screen.getByRole("button", { name: /Excluir/i });
+    const deleteBtn = screen.getByRole("button", { name: /^Excluir$/i });
     fireEvent.click(deleteBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/Essa ação não poderá ser desfeita/i)).toBeInTheDocument();
+      expect(
+        screen.getByText("Essa ação não poderá ser desfeita. Confirme para excluir o game."),
+      ).toBeInTheDocument();
     });
   });
 

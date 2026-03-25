@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import type { DragEvent } from "react";
+import { useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import MissionForm, {
   type FormStatus,
@@ -87,6 +88,53 @@ const sanitizeContentData = (data: Record<string, unknown>) =>
 type FieldErrorMap = Record<string, string[]>;
 
 const WORDLE_LETTERS_ONLY_REGEX = /^\p{L}+$/u;
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+
+const getFirstApiErrorMessage = (payload: unknown): string => {
+  if (!payload) return "";
+  if (typeof payload === "string") return payload;
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      if (typeof item === "string") {
+        return item;
+      }
+      if (item && typeof item === "object") {
+        const nested = getFirstApiErrorMessage(item);
+        if (nested) return nested;
+      }
+    }
+    return "";
+  }
+  if (typeof payload !== "object") return "";
+
+  const parsed = payload as Record<string, unknown>;
+  const direct =
+    (typeof parsed.error === "string" ? parsed.error : "") ||
+    (typeof parsed.detail === "string" ? parsed.detail : "");
+  if (direct) return direct;
+
+  const nonField = parsed.non_field_errors;
+  if (Array.isArray(nonField)) {
+    for (const item of nonField) {
+      if (typeof item === "string") return item;
+    }
+  }
+
+  for (const value of Object.values(parsed)) {
+    if (typeof value === "string") {
+      return value;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item === "string") {
+          return item;
+        }
+      }
+    }
+  }
+  return "";
+};
 
 export default function AdministrarMissoes() {
   const navigate = useNavigate();
@@ -174,19 +222,22 @@ export default function AdministrarMissoes() {
         }
 
         const normalized = data
-          .map((game: any, index: number) => ({
-            id: String(game.id ?? game.pk ?? game.uuid ?? index + 1),
-            name: String(
-              game.name ?? game.titulo ?? game.title ?? `Game ${index + 1}`,
-            ),
-            category: String(game.category ?? game.categoria ?? ""),
-          }))
+          .map((rawGame: unknown, index: number) => {
+            const game = asRecord(rawGame);
+            return {
+              id: String(game.id ?? game.pk ?? game.uuid ?? index + 1),
+              name: String(
+                game.name ?? game.titulo ?? game.title ?? `Game ${index + 1}`,
+              ),
+              category: String(game.category ?? game.categoria ?? ""),
+            };
+          })
           .filter((game: GameOption) => Boolean(game.id));
 
         if (isActive && normalized.length > 0) {
           setGames(normalized);
         }
-      } catch (error) {
+      } catch {
         if (isActive) {
           setGames(fallbackGames);
         }
@@ -247,27 +298,26 @@ export default function AdministrarMissoes() {
           throw new Error("Resposta inesperada de missões");
         }
 
-        const normalized = data.map((mission: any, index: number) => ({
-          id: String(mission.id ?? mission.pk ?? `mission-${index}`),
-          gameId: String(mission.game ?? mission.game_id ?? selectedGameId),
-          type: normalizeMissionType(mission.mission_type ?? mission.type),
-          title: String(mission.title ?? mission.name ?? `Missão ${index + 1}`),
-          description: String(mission.description ?? ""),
-          points: Number(mission.points_value ?? mission.points ?? 0),
-          order: Number(mission.order ?? index),
-          createdAt: String(mission.created_at ?? new Date().toISOString()),
-          contentData:
-            mission && typeof mission === "object" && "content_data" in mission
-              ? (mission as { content_data?: Record<string, unknown> })
-                  .content_data ?? {}
-              : {},
-          isPending: false,
-        }));
+        const normalized = data.map((rawMission: unknown, index: number) => {
+          const mission = asRecord(rawMission);
+          return {
+            id: String(mission.id ?? mission.pk ?? `mission-${index}`),
+            gameId: String(mission.game ?? mission.game_id ?? selectedGameId),
+            type: normalizeMissionType(mission.mission_type ?? mission.type),
+            title: String(mission.title ?? mission.name ?? `Missão ${index + 1}`),
+            description: String(mission.description ?? ""),
+            points: Number(mission.points_value ?? mission.points ?? 0),
+            order: Number(mission.order ?? index),
+            createdAt: String(mission.created_at ?? new Date().toISOString()),
+            contentData: asRecord(mission.content_data),
+            isPending: false,
+          };
+        });
 
         if (isActive) {
           setMissions(normalized);
         }
-      } catch (error) {
+      } catch {
         if (isActive) {
           setMissions([]);
         }
@@ -522,6 +572,7 @@ export default function AdministrarMissoes() {
     const updates = new Map<string, Mission>();
     let failures = 0;
     let firstErrorStatus: number | null = null;
+    let firstErrorMessage: string | null = null;
 
     const missionsToCreateOrUpdate = pendingMissions;
     const missionsToReorder = hasOrderChanges ? existingMissions : [];
@@ -550,15 +601,22 @@ export default function AdministrarMissoes() {
         });
 
         if (!response.ok) {
+          const responseData = await response.json().catch(() => null);
           if (firstErrorStatus === null) {
             firstErrorStatus = response.status;
+          }
+          if (!firstErrorMessage) {
+            const backendMessage = getFirstApiErrorMessage(responseData);
+            if (backendMessage) {
+              firstErrorMessage = backendMessage;
+            }
           }
           throw new Error(`Falha ao preparar ordem (${response.status})`);
         }
 
           await response.json().catch(() => ({}));
           tempUpdated.push(mission);
-      } catch (error) {
+      } catch {
         failures += 1;
       }
     }
@@ -579,19 +637,21 @@ export default function AdministrarMissoes() {
                 is_active: true,
               }),
             });
-          } catch (error) {
+          } catch {
             // Evita sobrescrever o erro principal com erro de rollback
           }
         }
 
       setFormStatus({
         type: "error",
-        text: "Não foi possível atualizar a ordem das missões. Tente novamente.",
+        text:
+          firstErrorMessage ||
+          "Não foi possível atualizar a ordem das missões. Tente novamente.",
       });
       setFinishModalState({
         type: "error",
         title: "Não foi possível salvar o game.",
-        message: getSaveErrorMessage(firstErrorStatus),
+        message: firstErrorMessage || getSaveErrorMessage(firstErrorStatus),
       });
       setIsFinishModalOpen(true);
       setIsSavingAll(false);
@@ -630,8 +690,15 @@ export default function AdministrarMissoes() {
         });
 
         if (!response.ok) {
+          const responseData = await response.json().catch(() => null);
           if (firstErrorStatus === null) {
             firstErrorStatus = response.status;
+          }
+          if (!firstErrorMessage) {
+            const backendMessage = getFirstApiErrorMessage(responseData);
+            if (backendMessage) {
+              firstErrorMessage = backendMessage;
+            }
           }
           throw new Error(`Falha ao salvar missão (${response.status})`);
         }
@@ -645,7 +712,7 @@ export default function AdministrarMissoes() {
           isPending: false,
         };
         updates.set(mission.id, updatedMission);
-      } catch (error) {
+      } catch {
         failures += 1;
       }
     }
@@ -669,8 +736,15 @@ export default function AdministrarMissoes() {
         });
 
         if (!response.ok) {
+          const responseData = await response.json().catch(() => null);
           if (firstErrorStatus === null) {
             firstErrorStatus = response.status;
+          }
+          if (!firstErrorMessage) {
+            const backendMessage = getFirstApiErrorMessage(responseData);
+            if (backendMessage) {
+              firstErrorMessage = backendMessage;
+            }
           }
           throw new Error(`Falha ao atualizar ordem (${response.status})`);
         }
@@ -680,7 +754,7 @@ export default function AdministrarMissoes() {
           ...mission,
           order: Number(orderMap.get(mission.id) ?? mission.order),
         });
-      } catch (error) {
+      } catch {
         failures += 1;
       }
     }
@@ -704,17 +778,18 @@ export default function AdministrarMissoes() {
     }
 
     if (failures > 0) {
+      const fallbackFailureMessage =
+        failures === 1
+          ? "Não foi possível salvar 1 missão. Tente novamente."
+          : `Não foi possível salvar ${failures} missões. Tente novamente.`;
       setFormStatus({
         type: "error",
-        text:
-          failures === 1
-            ? "Não foi possível salvar 1 missão. Tente novamente."
-            : `Não foi possível salvar ${failures} missões. Tente novamente.`,
+        text: firstErrorMessage || fallbackFailureMessage,
       });
       setFinishModalState({
         type: "error",
         title: "Não foi possível salvar o game.",
-        message: getSaveErrorMessage(firstErrorStatus),
+        message: firstErrorMessage || getSaveErrorMessage(firstErrorStatus),
       });
       setIsFinishModalOpen(true);
     } else {
@@ -774,7 +849,10 @@ export default function AdministrarMissoes() {
       });
 
       if (!response.ok) {
-        throw new Error("Erro ao excluir missão");
+        const responseData = await response.json().catch(() => null);
+        throw new Error(
+          getFirstApiErrorMessage(responseData) || "Erro ao excluir missão",
+        );
       }
 
       setMissions((previous) =>
@@ -867,7 +945,7 @@ export default function AdministrarMissoes() {
     setDragOverMissionId(null);
   };
 
-  const getValidationResult = () => {
+  const getValidationResult = useCallback(() => {
     const errors: string[] = [];
     const fieldErrors: FieldErrorMap = {};
     const addError = (fieldKey: string, message: string) => {
@@ -994,7 +1072,19 @@ export default function AdministrarMissoes() {
     }
 
     return { errors, fieldErrors };
-  };
+  }, [
+    missionDescription,
+    missionPoints,
+    missionTitle,
+    quizItems,
+    readingMinTime,
+    readingText,
+    selectedGameId,
+    selectedType,
+    videoDuration,
+    videoUrl,
+    wordleWord,
+  ]);
 
   const getMissionOrderLabel = (index: number) => `${index + 1}º`;
 
@@ -1031,13 +1121,20 @@ export default function AdministrarMissoes() {
           : [];
         if (questions.length > 0) {
           setQuizItems(
-            questions.map((q: any, idx: number) => ({
-              id: `quiz-${idx}-${Date.now()}`,
-              prompt: q.question || "",
-              options: q.options || ["", "", "", ""],
-              correctIndex: q.correct_answer ?? 0,
-              points: q.points || 10,
-            })),
+            questions.map((rawQuestion: unknown, idx: number) => {
+              const question = asRecord(rawQuestion);
+              const rawOptions = Array.isArray(question.options)
+                ? question.options
+                : ["", "", "", ""];
+
+              return {
+                id: `quiz-${idx}-${Date.now()}`,
+                prompt: String(question.question ?? ""),
+                options: rawOptions.map((option) => String(option)),
+                correctIndex: Number(question.correct_answer ?? 0),
+                points: Number(question.points ?? 10),
+              };
+            }),
           );
         } else {
           setQuizItems([createQuizQuestion()]);
@@ -1084,19 +1181,7 @@ export default function AdministrarMissoes() {
 
   const validationResult = useMemo(
     () => getValidationResult(),
-    [
-      missionDescription,
-      missionPoints,
-      missionTitle,
-      quizItems,
-      readingMinTime,
-      readingText,
-      selectedGameId,
-      selectedType,
-      videoDuration,
-      videoUrl,
-      wordleWord,
-    ],
+    [getValidationResult],
   );
   const validationErrors = validationResult.errors;
   const validationFieldErrors = validationResult.fieldErrors;
