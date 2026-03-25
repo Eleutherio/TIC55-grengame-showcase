@@ -25,7 +25,7 @@ export type MockSession = {
 export const mockSession: MockSession = {
   user: {
     name: "João da Silva",
-    email: "joao.silva@grendene.com",
+    email: "joao.silva@gmail.com",
     displayName: "João da Silva",
   },
   stats: {

@@ -64,7 +64,7 @@ export default function RecuperarSenha() {
           <input
             type="email"
             className="inputField"
-            placeholder="nome.sobrenome@grendene.com"
+            placeholder="nome.sobrenome@gmail.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required

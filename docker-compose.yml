@@ -35,12 +35,12 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgresql://grengame:grengame123@postgres:5432/grengame}
-      - DEBUG=True
-      - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-only-key}
+      - DEBUG=${DEBUG:-False}
+      - SECRET_KEY=${SECRET_KEY}
       - MAILERSEND_API_KEY=${MAILERSEND_API_KEY}
       - MAILERSEND_TEMPLATE_ID=${MAILERSEND_TEMPLATE_ID}
       - MAILERSEND_FROM_EMAIL=${MAILERSEND_FROM_EMAIL}
-      - ALLOWED_HOSTS=*
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
       - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
     healthcheck:
       test:
