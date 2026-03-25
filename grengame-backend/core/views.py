@@ -2,11 +2,16 @@ import logging
 from math import ceil
 from uuid import uuid4
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import update_last_login
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.storage import default_storage
+from django.core.validators import validate_email
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated, BasePermission
+from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -46,6 +51,20 @@ from .models import (
     UserBadgeUnlock,
 )
 from .tokens import CustomRefreshToken
+from .temporary_access import (
+    TEMP_BADGE_CRITERIA_LIMIT,
+    TEMP_GAMES_LIMIT,
+    TEMP_MISSIONS_LIMIT,
+    build_temporary_expiration,
+    editable_games_queryset_for,
+    editable_missions_queryset_for,
+    generate_temporary_password,
+    generate_unique_username_from_email,
+    is_temporary_admin,
+    purge_expired_temporary_accounts,
+    visible_games_queryset_for,
+    visible_missions_queryset_for,
+)
 from django.utils import timezone
 from django.db.models import Sum, Count, Min, Q
 from django.db.models.functions import Coalesce
@@ -67,8 +86,14 @@ BADGE_CRITERION_LABELS = {
     "active_days": "Ritmo Constante",
 }
 
+
+def _is_temporary_admin_request(request) -> bool:
+    return is_temporary_admin(getattr(request, "user", None))
+
 class LoginView(APIView):
     permission_classes = [AllowAny]  # Qualquer um pode tentar fazer login
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
     serializer_class = LoginSerializer
 
     def post(self, request):
@@ -77,6 +102,9 @@ class LoginView(APIView):
         serializer.is_valid(raise_exception=True)
 
         user = serializer.validated_data['user']
+
+        # Mantem last_login atualizado para auditoria e controle de primeiro acesso.
+        update_last_login(None, user)
 
         refresh = CustomRefreshToken.for_user(user)
         access = refresh.access_token
@@ -90,6 +118,12 @@ class LoginView(APIView):
                 'first_name': user.first_name,
                 'last_name': user.last_name,
                 'role': user.role,
+                'is_temporary_account': bool(getattr(user, "is_temporary_account", False)),
+                'temporary_expires_at': (
+                    user.temporary_expires_at.isoformat()
+                    if getattr(user, "temporary_expires_at", None)
+                    else None
+                ),
             }
         }, status=status.HTTP_200_OK)
 
@@ -145,6 +179,12 @@ class UserMeView(APIView):
             'role': user.role,
             'avatar': avatar_url,
             'avatar_url': avatar_url,
+            'is_temporary_account': bool(getattr(user, "is_temporary_account", False)),
+            'temporary_expires_at': (
+                user.temporary_expires_at.isoformat()
+                if getattr(user, "temporary_expires_at", None)
+                else None
+            ),
         }, status=status.HTTP_200_OK)
 
 
@@ -292,6 +332,7 @@ class GameListCreateView(ListCreateAPIView):
                 0,
             )
         )
+        queryset = visible_games_queryset_for(self.request.user, queryset)
         category = self.request.query_params.get('category')
         if category:
             queryset = queryset.filter(category__iexact=category)
@@ -343,7 +384,14 @@ class GameListCreateView(ListCreateAPIView):
         return Response(payload, status=status.HTTP_200_OK)
 
     def perform_create(self, serializer):
-        game = serializer.save()
+        if _is_temporary_admin_request(self.request):
+            owned_games = Game.objects.filter(created_by=self.request.user).count()
+            if owned_games >= TEMP_GAMES_LIMIT:
+                raise DRFValidationError(
+                    f"Conta temporaria pode criar no maximo {TEMP_GAMES_LIMIT} game."
+                )
+
+        game = serializer.save(created_by=self.request.user)
         ensure_default_badge_configs_for_game(
             game=game,
             actor=self.request.user,
@@ -355,27 +403,40 @@ class GameRetrieveUpdateDestroyView(RetrieveUpdateDestroyAPIView):
     serializer_class = GameSerializer
     permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
 
+    def get_queryset(self):
+        queryset = Game.objects.all()
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return visible_games_queryset_for(self.request.user, queryset)
+        return editable_games_queryset_for(self.request.user, queryset)
+
 
 class GameCategoriesView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        categorias = Game.objects.values_list('category', flat=True).distinct()
+        categorias = visible_games_queryset_for(
+            request.user,
+            Game.objects.all(),
+        ).values_list('category', flat=True).distinct()
         return Response([c.strip() for c in categorias if c and c.strip()])
 
 
 class GameBadgeConfigView(APIView):
     permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
 
-    @staticmethod
-    def _get_game_or_404(game_id):
+    def _get_game_or_404(self, request, game_id, for_write=False):
+        queryset = Game.objects.all()
+        if for_write:
+            queryset = editable_games_queryset_for(request.user, queryset)
+        else:
+            queryset = visible_games_queryset_for(request.user, queryset)
         try:
-            return Game.objects.get(pk=game_id)
+            return queryset.get(pk=game_id)
         except Game.DoesNotExist:
             return None
 
     def get(self, request, game_id):
-        game = self._get_game_or_404(game_id)
+        game = self._get_game_or_404(request, game_id, for_write=False)
         if game is None:
             return Response(
                 {"error": "Game nÃ£o encontrado."},
@@ -392,7 +453,7 @@ class GameBadgeConfigView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def put(self, request, game_id):
-        game = self._get_game_or_404(game_id)
+        game = self._get_game_or_404(request, game_id, for_write=True)
         if game is None:
             return Response(
                 {"error": "Game nÃ£o encontrado."},
@@ -405,6 +466,28 @@ class GameBadgeConfigView(APIView):
         criterion = validated["criterion"]
         tiers = validated["tiers"]
         is_active = validated.get("is_active", False)
+
+        if _is_temporary_admin_request(request):
+            has_existing_criterion = BadgeConfig.objects.filter(
+                game=game,
+                criterion=criterion,
+            ).exists()
+            distinct_criteria = (
+                BadgeConfig.objects.filter(game=game)
+                .values_list("criterion", flat=True)
+                .distinct()
+                .count()
+            )
+            if not has_existing_criterion and distinct_criteria >= TEMP_BADGE_CRITERIA_LIMIT:
+                return Response(
+                    {
+                        "error": (
+                            f"Conta temporaria pode configurar no maximo "
+                            f"{TEMP_BADGE_CRITERIA_LIMIT} criterios de badge por game."
+                        )
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         with transaction.atomic():
             badge_config, created = BadgeConfig.objects.get_or_create(
@@ -455,7 +538,7 @@ class GameBadgeConfigView(APIView):
         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
     def delete(self, request, game_id):
-        game = self._get_game_or_404(game_id)
+        game = self._get_game_or_404(request, game_id, for_write=True)
         if game is None:
             return Response(
                 {"error": "Game nÃ£o encontrado."},
@@ -488,6 +571,11 @@ class GameProgressCreateView(APIView):
         
         game = serializer.validated_data['game']
         user = request.user
+        if not visible_games_queryset_for(user, Game.objects.filter(pk=game.pk)).exists():
+            return Response(
+                {"error": "Game nao disponivel para este perfil."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
     
         progress, created = GameProgress.objects.get_or_create(
             user=user,
@@ -517,16 +605,17 @@ class GameProgressListView(APIView):
 
     def get(self, request):
         user = request.user
+        visible_games = visible_games_queryset_for(user, Game.objects.all()).values_list("id", flat=True)
         
         # Recalcula progresso de todos os games já iniciados para evitar
         # inconsistências históricas entre missões concluídas e GameProgress.
         existing_progresses = list(
-            GameProgress.objects.filter(user=user).select_related('game')
+            GameProgress.objects.filter(user=user, game_id__in=visible_games).select_related('game')
         )
         for progress_entry in existing_progresses:
             update_game_progress(user, progress_entry.game)
 
-        queryset = GameProgress.objects.filter(user=user)
+        queryset = GameProgress.objects.filter(user=user, game_id__in=visible_games)
         
         game_id = request.query_params.get('game_id')
         if game_id:
@@ -546,9 +635,10 @@ class GameProgressUpdateView(APIView):
 
     def patch(self, request, pk):
         user = request.user
+        visible_games = visible_games_queryset_for(user, Game.objects.all()).values_list("id", flat=True)
         
         try:
-            progress = GameProgress.objects.get(pk=pk, user=user)
+            progress = GameProgress.objects.get(pk=pk, user=user, game_id__in=visible_games)
         except GameProgress.DoesNotExist:
             return Response(
                 {'error': 'Progresso não encontrado ou você não tem permissão para acessá-lo.'},
@@ -575,9 +665,10 @@ class GameProgressUpdateView(APIView):
 
     def delete(self, request, pk):
         user = request.user
+        visible_games = visible_games_queryset_for(user, Game.objects.all()).values_list("id", flat=True)
         
         try:
-            progress = GameProgress.objects.get(pk=pk, user=user)
+            progress = GameProgress.objects.get(pk=pk, user=user, game_id__in=visible_games)
         except GameProgress.DoesNotExist:
             return Response(
                 {'error': 'Progresso não encontrado ou você não tem permissão para deletá-lo.'},
@@ -599,9 +690,13 @@ class RecalculateProgressView(APIView):
 
     def post(self, request):
         user = request.user
+        visible_games = visible_games_queryset_for(user, Game.objects.all()).values_list("id", flat=True)
         
         # Buscar todos os games que o usuário tem progresso iniciado
-        user_game_progresses = GameProgress.objects.filter(user=user).select_related('game')
+        user_game_progresses = GameProgress.objects.filter(
+            user=user,
+            game_id__in=visible_games,
+        ).select_related('game')
         
         if not user_game_progresses.exists():
             return Response({
@@ -626,7 +721,7 @@ class MissionListCreateView(ListCreateAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Mission.objects.all()
+        queryset = visible_missions_queryset_for(user, Mission.objects.all())
         
         if not (hasattr(user, 'role') and user.role == 'admin'):
             queryset = queryset.filter(is_active=True)
@@ -637,11 +732,33 @@ class MissionListCreateView(ListCreateAPIView):
         
         return queryset
 
+    def perform_create(self, serializer):
+        if _is_temporary_admin_request(self.request):
+            owned_missions = Mission.objects.filter(created_by=self.request.user).count()
+            if owned_missions >= TEMP_MISSIONS_LIMIT:
+                raise DRFValidationError(
+                    f"Conta temporaria pode criar no maximo {TEMP_MISSIONS_LIMIT} missoes."
+                )
+
+            game = serializer.validated_data.get("game")
+            if game is None or game.created_by_id != self.request.user.id:
+                raise DRFValidationError(
+                    "Conta temporaria pode criar missoes apenas no game criado por ela."
+                )
+
+        serializer.save(created_by=self.request.user)
+
 
 class MissionRetrieveUpdateDestroyView(RetrieveUpdateDestroyAPIView):
     queryset = Mission.objects.all()
     serializer_class = MissionSerializer
     permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
+
+    def get_queryset(self):
+        queryset = Mission.objects.all()
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return visible_missions_queryset_for(self.request.user, queryset)
+        return editable_missions_queryset_for(self.request.user, queryset)
 
 
 class MissionCompletionsListView(APIView):
@@ -650,7 +767,10 @@ class MissionCompletionsListView(APIView):
     def get(self, request):
         user = request.user
         # Buscar todas as missões ativas
-        missions = Mission.objects.filter(is_active=True).order_by('game', 'order')
+        missions = visible_missions_queryset_for(
+            user,
+            Mission.objects.filter(is_active=True),
+        ).order_by('game', 'order')
         # Usar MissionSerializer que já inclui o campo 'completion'
         serializer = MissionSerializer(missions, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -663,7 +783,10 @@ class MissionCompletionsStartView(APIView):
         user = request.user
         
         try:
-            mission = Mission.objects.get(pk=mission_id)
+            mission = visible_missions_queryset_for(
+                user,
+                Mission.objects.all(),
+            ).get(pk=mission_id)
         except Mission.DoesNotExist:
             return Response(
                 {'error': 'Missão não encontrada.'},
@@ -748,7 +871,10 @@ class MissionValidateView(APIView):
         user = request.user
         
         try:
-            mission = Mission.objects.get(pk=mission_id, is_active=True)
+            mission = visible_missions_queryset_for(
+                user,
+                Mission.objects.filter(is_active=True),
+            ).get(pk=mission_id)
         except Mission.DoesNotExist:
             return Response(
                 {'error': 'Missão não encontrada.'},
@@ -1100,7 +1226,10 @@ class GlobalLeaderboardView(LeaderboardMixin):
 class CourseLeaderboardView(LeaderboardMixin):
     def get(self, request, game_id):
         try:
-            game = Game.objects.get(pk=game_id)
+            game = visible_games_queryset_for(
+                request.user,
+                Game.objects.all(),
+            ).get(pk=game_id)
         except Game.DoesNotExist:
             return Response({"error": "Game não encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1178,9 +1307,13 @@ class UserBadgesView(APIView):
     def get(self, request):
         user = request.user
         game_id = request.query_params.get("game_id")
+        visible_game_ids = visible_games_queryset_for(
+            user,
+            Game.objects.all(),
+        ).values_list("id", flat=True)
 
         configs_qs = (
-            BadgeConfig.objects.filter(is_active=True)
+            BadgeConfig.objects.filter(is_active=True, game_id__in=visible_game_ids)
             .select_related("game")
             .prefetch_related("tier_rules")
         )
@@ -1251,7 +1384,10 @@ class AvailableBadgesView(UserBadgesView):
             )
 
         try:
-            game = Game.objects.get(pk=game_id)
+            game = visible_games_queryset_for(
+                request.user,
+                Game.objects.all(),
+            ).get(pk=game_id)
         except Game.DoesNotExist:
             return Response(
                 {"error": "Game não encontrado."},
@@ -1303,7 +1439,10 @@ class CourseTrailView(APIView):
         
         # Buscar o curso
         try:
-            game = Game.objects.get(id=course_id, is_active=True)
+            game = visible_games_queryset_for(
+                request.user,
+                Game.objects.filter(is_active=True),
+            ).get(id=course_id)
         except Game.DoesNotExist:
             return Response(
                 {'error': 'Curso não encontrado.'},
@@ -1315,14 +1454,18 @@ class CourseTrailView(APIView):
             game=game
         ).first()
         
-        missions = Mission.objects.filter(
-            game=game,
-            is_active=True
-        ).order_by('order', 'created_at')
+        missions_qs = visible_missions_queryset_for(
+            request.user,
+            Mission.objects.filter(
+                game=game,
+                is_active=True
+            ),
+        )
+        missions = missions_qs.order_by('order', 'created_at')
         
         user_completions = MissionCompletions.objects.filter(
             user=request.user,
-            mission__game=game
+            mission__in=missions_qs
         ).select_related('mission')
         
         completions_map = {
@@ -1410,34 +1553,114 @@ class ProgressSummaryView(APIView):
         }, status=status.HTTP_200_OK)
 
 
-class UserStatsView(APIView):
-    permission_classes = [IsAuthenticated]
+class TemporaryAccessRequestView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "temporary_access_request"
 
-    def get(self, request):
-        user = request.user
-        xp = MissionCompletions.objects.filter(
-            user=user, status='completed'
-        ).aggregate(total=Coalesce(Sum('points_earned'), 0))['total']
-        
-        if xp >= 1000:
-            level = 'Ouro'
-            xp_to_next = 0
-        elif xp >= 500:
-            level = 'Prata'
-            xp_to_next = 1000 - xp
-        else:
-            level = 'Bronze'
-            xp_to_next = 500 - xp
-        
-        return Response({
-            'xp': xp,
-            'level': level,
-            'xpToNext': xp_to_next,
-        }, status=status.HTTP_200_OK)
+    def post(self, request):
+        from .email_service import send_temporary_access_email
+
+        purge_expired_temporary_accounts()
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        nome = str(payload.get("nome", "")).strip()
+        contato_email = str(payload.get("email", "")).strip().lower()
+        aceite_temporario = bool(payload.get("aceite_temporario", False))
+        aceite_formal = bool(payload.get("aceite_formal", False))
+
+        if not nome:
+            return Response(
+                {"error": "Nome obrigatorio. Atualize a pagina e tente novamente."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            validate_email(contato_email)
+        except DjangoValidationError:
+            return Response(
+                {"error": "E-mail invalido. Atualize a pagina e tente novamente."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not aceite_temporario or not aceite_formal:
+            return Response(
+                {"error": "Aceites obrigatorios nao confirmados. Atualize a pagina e tente novamente."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if User.objects.filter(email=contato_email).exists():
+            return Response(
+                {"error": "Ja existe um usuario com este e-mail."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        temporary_email = contato_email
+        temporary_username = generate_unique_username_from_email(temporary_email)
+        temporary_password = generate_temporary_password()
+        expires_at = build_temporary_expiration()
+        expires_at_display = timezone.localtime(expires_at).strftime("%d/%m/%Y %H:%M")
+
+        try:
+            with transaction.atomic():
+                temp_user = User(
+                    email=temporary_email,
+                    username=temporary_username,
+                    first_name=nome,
+                    role="admin",
+                    is_temporary_account=True,
+                    temporary_expires_at=expires_at,
+                )
+                temp_user.set_password(temporary_password)
+                temp_user.save()
+
+                email_sent = send_temporary_access_email(
+                    to_email=contato_email,
+                    name=nome,
+                    password=temporary_password,
+                    expires_at=expires_at_display,
+                )
+
+                if not email_sent:
+                    raise DRFValidationError(
+                        "Nao foi possivel enviar o e-mail no momento. Atualize a pagina e tente novamente."
+                    )
+        except DRFValidationError as exc:
+            detail = exc.detail
+            if isinstance(detail, list) and detail:
+                message = str(detail[0])
+            else:
+                message = str(detail)
+            return Response({"error": message}, status=status.HTTP_502_BAD_GATEWAY)
+        except Exception:
+            logger.exception(
+                "TEMP_ACCESS_REQUEST_FAILED: contato_email=%s nome=%s",
+                contato_email,
+                nome,
+            )
+            return Response(
+                {"error": "Falha ao processar solicitacao. Atualize a pagina e tente novamente."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        logger.info(
+            "TEMP_ACCESS_REQUEST_SUCCESS: contato_email=%s temp_user=%s expires_at=%s",
+            contato_email,
+            temporary_email,
+            expires_at.isoformat(),
+        )
+        return Response(
+            {
+                "message": "Solicitacao processada com sucesso. Verifique seu e-mail para acessar a plataforma.",
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset_request"
 
     def post(self, request):
         from .models import PasswordResetToken
@@ -1455,16 +1678,6 @@ class PasswordResetRequestView(APIView):
             logger.warning(f"PASSWORD_RESET_ATTEMPT_FAILED: email={email} reason=user_not_found")
             return Response({'message': 'Se o email estiver cadastrado, você receberá um código.'}, status=status.HTTP_200_OK)
 
-        ten_minutes_ago = timezone.now() - timedelta(minutes=10)
-        recent_tokens = PasswordResetToken.objects.filter(
-            user=user,
-            created_at__gte=ten_minutes_ago
-        ).count()
-
-        if recent_tokens >= 3:
-            logger.warning(f"PASSWORD_RESET_RATE_LIMIT: user={user.id} email={email}")
-            return Response({'error': 'Muitas tentativas. Aguarde 10 minutos.'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
-
         PasswordResetToken.objects.filter(user=user, is_used=False).update(is_used=True)
 
         token = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
@@ -1473,7 +1686,9 @@ class PasswordResetRequestView(APIView):
         PasswordResetToken.objects.create(user=user, token=token, expires_at=expires_at)
 
         name = user.first_name or user.email.split('@')[0]
-        send_password_reset_email(email, name, token)
+        email_sent = send_password_reset_email(email, name, token)
+        if not email_sent:
+            logger.error(f"PASSWORD_RESET_REQUEST_EMAIL_NOT_SENT: user={user.id} email={email}")
 
         logger.info(f"PASSWORD_RESET_REQUEST: user={user.id} email={email}")
 
@@ -1482,6 +1697,8 @@ class PasswordResetRequestView(APIView):
 
 class PasswordResetVerifyView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset_verify"
 
     def post(self, request):
         from .models import PasswordResetToken
@@ -1517,6 +1734,8 @@ class PasswordResetVerifyView(APIView):
 
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset_confirm"
 
     def post(self, request):
         from .models import PasswordResetToken
@@ -1562,6 +1781,8 @@ class IsAdminRole(BasePermission):
     def has_permission(self, request, view):
         if request.user.is_superuser:
             return True
+        if is_temporary_admin(request.user):
+            return False
         return request.user.is_authenticated and getattr(request.user, "role", None) == "admin"
 
 
