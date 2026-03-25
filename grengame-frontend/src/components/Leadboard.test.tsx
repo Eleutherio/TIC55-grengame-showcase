@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ComponentProps } from "react";
 import { describe, expect, it } from "vitest";
 import Leadboard, { type LeaderboardEntry } from "./Leadboard";
-import { API_URL } from "../../config/api";
+import { API_URL } from "../config/api";
 
 const baseEntries: LeaderboardEntry[] = [
   {

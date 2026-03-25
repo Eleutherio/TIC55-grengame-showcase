@@ -41,7 +41,7 @@ type CoursesResponse = {
   data?: any;
 };
 
-import { API_URL as API_BASE } from "../../config/api";
+import { API_URL as API_BASE } from "../config/api";
 const COURSES_ENDPOINT = `${API_BASE}/auth/cursos/`;
 const PROGRESS_ENDPOINT = `${API_BASE}/auth/progress/list/`;
 const LAST_PLAYED_KEY = "lastPlayedCourseId";

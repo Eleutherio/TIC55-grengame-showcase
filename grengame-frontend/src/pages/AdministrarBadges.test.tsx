@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdministrarBadges from "./AdministrarBadges";
-import { API_URL } from "../../config/api";
+import { API_URL } from "../config/api";
 
 const captured = vi.hoisted(() => ({
   jogoProps: [] as Array<Record<string, unknown>>,
