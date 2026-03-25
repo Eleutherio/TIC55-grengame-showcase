@@ -3,7 +3,7 @@ import styles from './Login.module.css';
 import { useNavigate } from 'react-router-dom';
 import { saveTokens } from '../utils/auth';
 import { Link } from 'react-router-dom';
-import { API_URL } from '../config/api';
+import { API_CONFIG_ERROR, API_URL } from '../config/api';
 
 const Login = () => {
     // --- ESTADO (State) ---
@@ -49,6 +49,11 @@ const Login = () => {
         // --- INÍCIO DA INTEGRAÇÃO COM BACK-END ---
         
         try {
+            if (!API_URL) {
+                setError(API_CONFIG_ERROR);
+                return;
+            }
+
             // 1. Envia os dados para o seu back-end Django
             // --- MUDANÇA 1: URL CORRIGIDA ---
             // O backend espera /auth/ (definido em grengame/urls.py)
