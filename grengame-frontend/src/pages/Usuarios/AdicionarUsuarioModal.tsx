@@ -15,10 +15,15 @@ type AdicionarUsuarioModalProps = {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
-export default function AdicionarUsuarioModal({ isOpen, onClose, onSalvar }: AdicionarUsuarioModalProps) {
+export default function AdicionarUsuarioModal({
+  isOpen,
+  onClose,
+  onSalvar,
+}: AdicionarUsuarioModalProps) {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [role, setRole] = useState<"admin" | "user">("user");
   const [erro, setErro] = useState("");
   const [isSalvando, setIsSalvando] = useState(false);
@@ -28,6 +33,7 @@ export default function AdicionarUsuarioModal({ isOpen, onClose, onSalvar }: Adi
       setNome("");
       setEmail("");
       setSenha("");
+      setMostrarSenha(false);
       setRole("user");
       setErro("");
       setIsSalvando(false);
@@ -62,7 +68,12 @@ export default function AdicionarUsuarioModal({ isOpen, onClose, onSalvar }: Adi
     setIsSalvando(true);
     try {
       await Promise.resolve(
-        onSalvar({ nome: nomeTrimmed, email: emailTrimmed, senha: senhaTrimmed, role }),
+        onSalvar({
+          nome: nomeTrimmed,
+          email: emailTrimmed,
+          senha: senhaTrimmed,
+          role,
+        }),
       );
       onClose();
     } catch (error) {
@@ -81,8 +92,12 @@ export default function AdicionarUsuarioModal({ isOpen, onClose, onSalvar }: Adi
       <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">Adicionar usuário manualmente</h2>
-            <p className="text-sm text-gray-600">Informe nome e e-mail corporativo.</p>
+            <h2 className="text-xl font-semibold text-gray-900">
+              Adicionar usuário manualmente
+            </h2>
+            <p className="text-sm text-gray-600">
+              Informe nome e e-mail corporativo.
+            </p>
           </div>
           <button
             type="button"
@@ -94,7 +109,10 @@ export default function AdicionarUsuarioModal({ isOpen, onClose, onSalvar }: Adi
         </div>
 
         <div className="mt-5 space-y-4">
-          <label className="block text-sm font-medium text-gray-700" htmlFor="nome-manual">
+          <label
+            className="block text-sm font-medium text-gray-700"
+            htmlFor="nome-manual"
+          >
             Nome completo
           </label>
           <input
@@ -106,7 +124,10 @@ export default function AdicionarUsuarioModal({ isOpen, onClose, onSalvar }: Adi
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-[#ffc800] focus:outline-none focus:ring-2 focus:ring-[#ffc800]"
           />
 
-          <label className="block text-sm font-medium text-gray-700" htmlFor="email-manual">
+          <label
+            className="block text-sm font-medium text-gray-700"
+            htmlFor="email-manual"
+          >
             E-mail corporativo
           </label>
           <input
@@ -118,25 +139,44 @@ export default function AdicionarUsuarioModal({ isOpen, onClose, onSalvar }: Adi
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-[#ffc800] focus:outline-none focus:ring-2 focus:ring-[#ffc800]"
           />
 
-          <label className="block text-sm font-medium text-gray-700" htmlFor="senha-manual">
+          <label
+            className="block text-sm font-medium text-gray-700"
+            htmlFor="senha-manual"
+          >
             Senha provisória
           </label>
-          <input
-            id="senha-manual"
-            type="password"
-            value={senha}
-            onChange={(event) => setSenha(event.target.value)}
-            placeholder="Mínimo 6 caracteres"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-[#ffc800] focus:outline-none focus:ring-2 focus:ring-[#ffc800]"
-          />
+          <div className="relative">
+            <input
+              id="senha-manual"
+              type={mostrarSenha ? "text" : "password"}
+              value={senha}
+              onChange={(event) => setSenha(event.target.value)}
+              placeholder="Mínimo 6 caracteres"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 pr-10 text-sm text-gray-900 shadow-sm focus:border-[#ffc800] focus:outline-none focus:ring-2 focus:ring-[#ffc800]"
+            />
+            <button
+              type="button"
+              onClick={() => setMostrarSenha((value) => !value)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-base leading-none text-gray-500 hover:text-gray-700"
+              aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
+              aria-pressed={mostrarSenha}
+            >
+              {mostrarSenha ? "🙈" : "👁"}
+            </button>
+          </div>
 
-          <label className="block text-sm font-medium text-gray-700" htmlFor="role-manual">
+          <label
+            className="block text-sm font-medium text-gray-700"
+            htmlFor="role-manual"
+          >
             Perfil de acesso
           </label>
           <select
             id="role-manual"
             value={role}
-            onChange={(event) => setRole(event.target.value as "admin" | "user")}
+            onChange={(event) =>
+              setRole(event.target.value as "admin" | "user")
+            }
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-[#ffc800] focus:outline-none focus:ring-2 focus:ring-[#ffc800]"
           >
             <option value="user">Usuário</option>
