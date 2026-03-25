@@ -49,6 +49,21 @@ const getFirstErrorMessage = (value: unknown) => {
   return typeof value === "string" ? value : "";
 };
 
+const getApiErrorMessage = (payload: unknown) => {
+  if (!payload) return "";
+  if (typeof payload === "string") return payload;
+  if (Array.isArray(payload)) return getFirstErrorMessage(payload);
+  if (typeof payload !== "object") return "";
+
+  const parsed = payload as Record<string, unknown>;
+  return (
+    getFirstErrorMessage(parsed.error) ||
+    getFirstErrorMessage(parsed.detail) ||
+    getFirstErrorMessage(parsed.non_field_errors) ||
+    ""
+  );
+};
+
 const hasFieldErrors = (errors: FieldErrors) =>
   Object.values(errors).some((value) => Boolean(value));
 
@@ -120,7 +135,7 @@ export default function AdministrarGames() {
 
         const data = await response.json();
         setCourses(Array.isArray(data) ? data : []);
-      } catch (error) {
+      } catch {
         setSaveError("Nao foi possivel carregar os games.");
       } finally {
         setIsLoading(false);
@@ -369,7 +384,7 @@ export default function AdministrarGames() {
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition);
     };
-  }, [tourStep, currentTour]);
+  }, [tourStep, currentTour, activeTourId]);
 
   // Fluxo central de validacao + persistencia do game.
   const handleSaveCourse = async () => {
@@ -438,11 +453,11 @@ export default function AdministrarGames() {
         // Log para o desenvolvedor (você)
         console.error("Erro HTTP:", response.status);
 
+        const errorData = await response.json().catch(() => null);
         let errorMessage = "Não foi possível salvar o game. Tente novamente.";
 
         if (response.status === 400) {
           errorMessage = "Dados inválidos. Verifique os campos preenchidos.";
-          const errorData = await response.json().catch(() => null);
 
           if (errorData && typeof errorData === "object") {
             const errorMap = errorData as Record<string, unknown>;
@@ -466,31 +481,34 @@ export default function AdministrarGames() {
               errorMessage = "Verifique os campos destacados.";
             }
 
-            const nonFieldError =
-              getFirstErrorMessage(errorMap.non_field_errors) ||
-              getFirstErrorMessage(errorMap.detail);
+            const nonFieldError = getApiErrorMessage(errorMap);
             if (nonFieldError) {
               errorMessage = nonFieldError;
             }
           }
         } else {
-          switch (response.status) {
-            case 401:
-              errorMessage = "Não autenticado. Faça login novamente.";
-              break;
-            case 403:
-              errorMessage = "Sem permissão. Contate o administrador.";
-              break;
-            case 413:
-              errorMessage =
-                "Arquivo muito grande. Comprima o arquivo antes de enviar.";
-              break;
-            case 500:
-              errorMessage =
-                "Erro no servidor. Espere um pouco e tente novamente.";
-              break;
-            default:
-              errorMessage = `Erro inesperado (${response.status}). Tente novamente.`;
+          const backendMessage = getApiErrorMessage(errorData);
+          if (backendMessage) {
+            errorMessage = backendMessage;
+          } else {
+            switch (response.status) {
+              case 401:
+                errorMessage = "Não autenticado. Faça login novamente.";
+                break;
+              case 403:
+                errorMessage = "Sem permissão. Contate o administrador.";
+                break;
+              case 413:
+                errorMessage =
+                  "Arquivo muito grande. Comprima o arquivo antes de enviar.";
+                break;
+              case 500:
+                errorMessage =
+                  "Erro no servidor. Espere um pouco e tente novamente.";
+                break;
+              default:
+                errorMessage = `Erro inesperado (${response.status}). Tente novamente.`;
+            }
           }
         }
 
@@ -537,7 +555,7 @@ export default function AdministrarGames() {
         setRedirectGameId(String(savedCourse.id));
         setIsRedirectModalOpen(true);
       }
-    } catch (error: any) {
+    } catch {
       setSaveError(
         "Erro de conexão. Verifique sua internet e tente novamente.",
       );
@@ -688,7 +706,7 @@ export default function AdministrarGames() {
       }
 
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   };
@@ -1031,7 +1049,7 @@ export default function AdministrarGames() {
                   <input
                     id="course-title"
                     type="text"
-                    placeholder="Ex.: Sustentabilidade na Grendene"
+                    placeholder="Ex.: Missão Sustentável"
                     maxLength={100}
                     value={name}
                     onChange={(event) => {

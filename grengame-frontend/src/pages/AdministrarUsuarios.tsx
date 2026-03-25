@@ -21,6 +21,7 @@ type Usuario = {
   email: string;
   cursosCompletos: number;
   role?: "admin" | "user";
+  can_manage?: boolean;
 };
 
 const API_BASE_URL = API_URL.replace(/\/+$/, "");
@@ -32,6 +33,35 @@ function getAuthHeaders(extra: Record<string, string> = {}): Record<string, stri
     ...authHeader,
     ...extra,
   };
+}
+
+function getFirstStringMessage(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item === "string") {
+        return item;
+      }
+    }
+  }
+  return "";
+}
+
+function getApiErrorMessage(payload: unknown): string {
+  if (!payload) return "";
+  if (typeof payload === "string") return payload;
+  if (Array.isArray(payload)) return getFirstStringMessage(payload);
+  if (typeof payload !== "object") return "";
+
+  const parsed = payload as Record<string, unknown>;
+  return (
+    getFirstStringMessage(parsed.error) ||
+    getFirstStringMessage(parsed.detail) ||
+    getFirstStringMessage(parsed.non_field_errors) ||
+    ""
+  );
 }
 
 async function importarColaboradoresEmLote(colaboradores: CSVRow[]) {
@@ -46,10 +76,16 @@ async function importarColaboradoresEmLote(colaboradores: CSVRow[]) {
   });
 
   if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as
+      | {
+          error?: unknown;
+          detail?: unknown;
+          non_field_errors?: unknown;
+          errors?: Array<{ linha?: number; email?: string; motivo?: string }>;
+        }
+      | null;
+
     if (response.status === 409) {
-      const data = (await response.json().catch(() => null)) as {
-        errors?: Array<{ linha?: number; email?: string; motivo?: string }>;
-      } | null;
       const backendErrors = data?.errors?.map((e) => ({
         linha: e.linha ?? null,
         email: e.email ?? undefined,
@@ -59,7 +95,10 @@ async function importarColaboradoresEmLote(colaboradores: CSVRow[]) {
       (err as Error & { backendErrors?: typeof backendErrors }).backendErrors = backendErrors;
       throw err;
     }
-    throw new Error(`Falha na importação (${response.status})`);
+
+    throw new Error(
+      getApiErrorMessage(data) || `Falha na importação (${response.status})`,
+    );
   }
 }
 
@@ -114,7 +153,9 @@ async function criarUsuarioManual(usuario: DadosUsuarioManual) {
 
   if (!response.ok) {
     const errorPayload = await response.json().catch(() => ({}));
-    const message = (errorPayload && errorPayload.error) || `Falha ao criar usuário (${response.status})`;
+    const message =
+      getApiErrorMessage(errorPayload) ||
+      `Falha ao criar usuário (${response.status})`;
     throw new Error(message);
   }
 }
@@ -136,7 +177,9 @@ async function atualizarUsuario(usuario: DadosEdicaoUsuario) {
 
   if (!response.ok) {
     const errorPayload = await response.json().catch(() => ({}));
-    const message = (errorPayload && errorPayload.error) || `Falha ao atualizar usuário (${response.status})`;
+    const message =
+      getApiErrorMessage(errorPayload) ||
+      `Falha ao atualizar usuário (${response.status})`;
     throw new Error(message);
   }
 }
@@ -213,7 +256,11 @@ export default function AdministrarUsuarios() {
   const hasMore = shouldPaginate && usuariosOrdenados.length > visibleCount;
   const semResultados = normalizedQuery.length > 0 && usuariosFiltrados.length === 0;
   const emailsSelecionaveis = usuariosFiltrados
-    .filter((u) => (currentUserId !== null ? u.id !== currentUserId : true))
+    .filter(
+      (u) =>
+        Boolean(u.can_manage) &&
+        (currentUserId !== null ? u.id !== currentUserId : true)
+    )
     .map((u) => u.email);
 
   const carregarUsuarios = useCallback(async () => {
@@ -224,6 +271,7 @@ export default function AdministrarUsuarios() {
           atualizados.map((u) => ({
             ...u,
             role: (u as Usuario).role ?? "user",
+            can_manage: (u as Usuario).can_manage ?? true,
           }))
         );
         return;
@@ -301,8 +349,12 @@ export default function AdministrarUsuarios() {
       await criarUsuarioManual(usuario);
       await carregarUsuarios();
       setFeedbackMensagem(`Usuário ${usuario.nome} criado com sucesso.`);
-    } catch {
-      window.alert("Não foi possível adicionar o usuário. Tente novamente.");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Não foi possível adicionar o usuário. Tente novamente.";
+      throw new Error(message);
     }
   };
 
@@ -345,7 +397,11 @@ export default function AdministrarUsuarios() {
         });
         setIsResumoOpen(true);
       } else {
-        window.alert("Não foi possível concluir a importação. Tente novamente em instantes.");
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Não foi possível concluir a importação. Tente novamente em instantes.";
+        window.alert(message);
       }
     } finally {
       setIsImportando(false);
@@ -468,6 +524,12 @@ export default function AdministrarUsuarios() {
   };
 
   const handleAbrirEdicao = (usuario: Usuario) => {
+    if (!usuario.can_manage) {
+      setFeedbackMensagem(
+        "Este usuário está disponível apenas para visualização neste perfil."
+      );
+      return;
+    }
     setUsuarioEdicao({
       nome: usuario.nome,
       email: usuario.email,
@@ -488,8 +550,12 @@ export default function AdministrarUsuarios() {
       await atualizarUsuario(dados);
       await carregarUsuarios();
       setFeedbackMensagem(`Usuário ${dados.nome} atualizado com sucesso.`);
-    } catch {
-      window.alert("Não foi possível atualizar o usuário. Tente novamente.");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Não foi possível atualizar o usuário. Tente novamente.";
+      throw new Error(message);
     }
   };
 
@@ -611,6 +677,7 @@ export default function AdministrarUsuarios() {
                         {visibleUsuarios.map((usuario) => {
                           const selecionado = selectedEmails.includes(usuario.email);
                           const isSelf = currentUserId !== null && usuario.id === currentUserId;
+                          const canManage = Boolean(usuario.can_manage);
                           const rowClass = isSelf ? "bg-roxo-forte/10" : "bg-white";
                           return (
                             <tr key={usuario.email} className={`border-t border-[#4b40cb]/30 text-gray-900 ${rowClass}`}>
@@ -628,15 +695,21 @@ export default function AdministrarUsuarios() {
                               <td className="px-4 py-3 text-sm text-center">{usuario.cursosCompletos}</td>
                               <td className="px-4 py-3 text-sm">
                                 <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleAbrirEdicao(usuario)}
-                                    className="w-full cursor-pointer rounded-md bg-amarelo px-3 py-2 font-semibold text-[#2f2574] transition hover:bg-[#e6b300] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f2574] sm:w-auto"
-                                    aria-label={`Editar ${usuario.nome}`}
-                                  >
-                                    Editar
-                                  </button>
-                                  {isSelectionMode && !isSelf && (
+                                  {canManage ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAbrirEdicao(usuario)}
+                                      className="w-full cursor-pointer rounded-md bg-amarelo px-3 py-2 font-semibold text-[#2f2574] transition hover:bg-[#e6b300] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f2574] sm:w-auto"
+                                      aria-label={`Editar ${usuario.nome}`}
+                                    >
+                                      Editar
+                                    </button>
+                                  ) : (
+                                    <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
+                                      Somente leitura
+                                    </span>
+                                  )}
+                                  {isSelectionMode && !isSelf && canManage && (
                                     <label className="flex items-center gap-2 text-xs font-semibold text-gray-600">
                                       <input
                                         type="checkbox"
@@ -686,6 +759,7 @@ export default function AdministrarUsuarios() {
                   visibleUsuarios.map((usuario) => {
                     const selecionado = selectedEmails.includes(usuario.email);
                     const isSelf = currentUserId !== null && usuario.id === currentUserId;
+                    const canManage = Boolean(usuario.can_manage);
                     return (
                       <article
                         key={usuario.email}
@@ -715,15 +789,21 @@ export default function AdministrarUsuarios() {
                           </div>
 
                           <div aria-label="Ações" className="flex flex-col gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleAbrirEdicao(usuario)}
-                              className="w-full cursor-pointer rounded-md bg-[#ffc800] px-3 py-3 text-sm font-semibold text-[#2f2574] transition hover:bg-[#e6b300] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f2574]"
-                              aria-label={`Editar ${usuario.nome}`}
-                            >
-                              Editar
-                            </button>
-                            {isSelectionMode && !isSelf && (
+                            {canManage ? (
+                              <button
+                                type="button"
+                                onClick={() => handleAbrirEdicao(usuario)}
+                                className="w-full cursor-pointer rounded-md bg-[#ffc800] px-3 py-3 text-sm font-semibold text-[#2f2574] transition hover:bg-[#e6b300] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f2574]"
+                                aria-label={`Editar ${usuario.nome}`}
+                              >
+                                Editar
+                              </button>
+                            ) : (
+                              <span className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600">
+                                Somente leitura
+                              </span>
+                            )}
+                            {isSelectionMode && !isSelf && canManage && (
                               <label className="flex items-center gap-2 text-xs font-semibold text-gray-600">
                                 <input
                                   type="checkbox"

@@ -251,7 +251,14 @@ const formatDate = (value?: string) => {
 };
 
 const getErrorMessage = (payload: unknown): string => {
-  if (!payload || typeof payload !== "object") return "";
+  if (!payload) return "";
+  if (typeof payload === "string") return payload;
+  if (Array.isArray(payload)) {
+    const firstText = payload.find((item) => typeof item === "string");
+    return typeof firstText === "string" ? firstText : "";
+  }
+  if (typeof payload !== "object") return "";
+
   const parsed = payload as Record<string, unknown>;
   if (typeof parsed.detail === "string") return parsed.detail;
   if (typeof parsed.error === "string") return parsed.error;
@@ -262,6 +269,15 @@ const getErrorMessage = (payload: unknown): string => {
   ) {
     return parsed.non_field_errors[0];
   }
+
+  for (const value of Object.values(parsed)) {
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) {
+      const firstText = value.find((item) => typeof item === "string");
+      if (typeof firstText === "string") return firstText;
+    }
+  }
+
   return "";
 };
 

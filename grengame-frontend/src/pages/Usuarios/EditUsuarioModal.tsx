@@ -11,7 +11,7 @@ type EditUsuarioModalProps = {
   isOpen: boolean;
   onClose: () => void;
   usuario: DadosEdicaoUsuario | null;
-  onSalvar: (dados: DadosEdicaoUsuario) => void;
+  onSalvar: (dados: DadosEdicaoUsuario) => void | Promise<void>;
   isRoleLocked?: boolean;
 };
 
@@ -53,7 +53,7 @@ export default function EditUsuarioModal({
     return null;
   }
 
-  const handleSalvar = () => {
+  const handleSalvar = async () => {
     const nomeTrimmed = nome.trim();
     const emailTrimmed = email.trim().toLowerCase();
     const senhaTrimmed = senha.trim();
@@ -76,13 +76,21 @@ export default function EditUsuarioModal({
     setErro("");
     setIsSalvando(true);
     try {
-      onSalvar({
-        nome: nomeTrimmed,
-        email: emailTrimmed,
-        role: isRoleLocked ? usuario.role : role,
-        senha: senhaTrimmed || undefined,
-      });
+      await Promise.resolve(
+        onSalvar({
+          nome: nomeTrimmed,
+          email: emailTrimmed,
+          role: isRoleLocked ? usuario.role : role,
+          senha: senhaTrimmed || undefined,
+        }),
+      );
       onClose();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Não foi possível atualizar o usuário. Tente novamente.";
+      setErro(message);
     } finally {
       setIsSalvando(false);
     }
