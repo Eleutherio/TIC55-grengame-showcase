@@ -14,7 +14,7 @@ def calculate_stars(points_earned, points_value):
 
 
 class User(AbstractUser):
-    email = models.EmailField(unique=True, verbose_name="E-mail da Grendene")
+    email = models.EmailField(unique=True, verbose_name="E-mail")
     
     ROLE_CHOICES = [
         ("admin", "Administrador"),
@@ -38,6 +38,20 @@ class User(AbstractUser):
         ],
     )
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="user", verbose_name="Papel no sistema")
+    is_temporary_account = models.BooleanField(default=False, verbose_name="Conta temporaria")
+    temporary_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Expira em",
+    )
+    created_by_temporary_admin = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="temporary_managed_users",
+        verbose_name="Criado por admin temporario",
+    )
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
@@ -63,6 +77,14 @@ class Game(models.Model):
     video_url = models.FileField(upload_to='cursos/videos/', blank=True, null=True, verbose_name="Vídeo")
     banner = models.ImageField(upload_to='cursos/banners/', blank=True, null=True, verbose_name="Banner")
     is_active = models.BooleanField(default=True, verbose_name="Ativo")
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="games_created",
+        verbose_name="Criado por",
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
 
@@ -170,6 +192,14 @@ class Mission(models.Model):
         help_text="Conteúdo específico da missão (vídeo_url, quiz_questions, game_config, etc)"
     )
     is_active = models.BooleanField(default=True, verbose_name="Ativa")
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="missions_created",
+        verbose_name="Criada por",
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
 

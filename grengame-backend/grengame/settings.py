@@ -43,9 +43,16 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = [
     host.strip()
-    for host in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0,*').split(',')
+    for host in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
     if host.strip()
 ]
+
+try:
+    TEMPORARY_FIRST_LOGIN_WINDOW_MINUTES = int(
+        os.getenv("TEMPORARY_FIRST_LOGIN_WINDOW_MINUTES", "30")
+    )
+except ValueError:
+    TEMPORARY_FIRST_LOGIN_WINDOW_MINUTES = 30
 
 
 # Application definition
@@ -147,11 +154,18 @@ AUTH_USER_MODEL = 'core.User'
 # Configuração do Django REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'core.authentication.TemporaryAwareJWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_THROTTLE_RATES': {
+        'login': os.getenv('THROTTLE_LOGIN_RATE', '10/min'),
+        'temporary_access_request': os.getenv('THROTTLE_TEMP_ACCESS_RATE', '3/hour'),
+        'password_reset_request': os.getenv('THROTTLE_PASSWORD_RESET_REQUEST_RATE', '5/hour'),
+        'password_reset_verify': os.getenv('THROTTLE_PASSWORD_RESET_VERIFY_RATE', '10/hour'),
+        'password_reset_confirm': os.getenv('THROTTLE_PASSWORD_RESET_CONFIRM_RATE', '10/hour'),
+    },
 }
 
 SIMPLE_JWT = {

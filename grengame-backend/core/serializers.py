@@ -1,8 +1,13 @@
+from datetime import timedelta
+
 from rest_framework import serializers
+from django.conf import settings
 from django.contrib.auth import get_user_model, authenticate
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import models
+from django.utils import timezone
 from .badge_services import is_percentage_based_criterion
+from .temporary_access import purge_expired_temporary_accounts
 from .models import (
     BadgeConfig,
     BadgeTierRule,
@@ -20,7 +25,7 @@ User = get_user_model()
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField(
         required=True,
-        help_text="Email do colaborador (@grendene.com.br)"
+        help_text="Email do colaborador"
     )
     password = serializers.CharField(
         required=True,
@@ -35,6 +40,8 @@ class LoginSerializer(serializers.Serializer):
     def validate(self, data):
         email = data.get('email')
         password = data.get('password')
+
+        purge_expired_temporary_accounts()
 
         try:
             user = User.objects.get(email=email)
@@ -52,6 +59,27 @@ class LoginSerializer(serializers.Serializer):
 
         if authenticated_user is None:
             raise serializers.ValidationError("Email ou senha incorretos.")
+
+        # Janela curta para o primeiro login do perfil temporario.
+        first_login_window_minutes = getattr(
+            settings,
+            "TEMPORARY_FIRST_LOGIN_WINDOW_MINUTES",
+            30,
+        )
+        if (
+            getattr(authenticated_user, "is_temporary_account", False)
+            and getattr(authenticated_user, "last_login", None) is None
+            and first_login_window_minutes > 0
+        ):
+            created_at = getattr(authenticated_user, "created_at", None)
+            if created_at is not None:
+                first_login_deadline = created_at + timedelta(
+                    minutes=first_login_window_minutes
+                )
+                if timezone.now() > first_login_deadline:
+                    raise serializers.ValidationError(
+                        "Credenciais temporarias expiraram para o primeiro acesso. Solicite um novo login temporario."
+                    )
 
         data['user'] = authenticated_user
         return data

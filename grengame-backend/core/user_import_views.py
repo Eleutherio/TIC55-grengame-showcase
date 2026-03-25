@@ -1,22 +1,27 @@
-from typing import List, TypedDict
+from typing import List
 
+import unicodedata
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+from django.db.models import Q
 from django.utils.crypto import get_random_string
-import unicodedata
 from rest_framework import status
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-User = get_user_model()
+from .temporary_access import (
+    TEMP_MANAGED_USERS_LIMIT,
+    generate_unique_username_from_email,
+    is_temporary_admin,
+)
 
-ALLOWED_EMAIL_DOMAIN = "grendene.com.br"
+User = get_user_model()
 
 
 class IsAdminRole(BasePermission):
-    message = "Você não tem permissão para acessar este recurso."
+    message = "Voce nao tem permissao para acessar este recurso."
 
     def has_permission(self, request, view):
         user = request.user
@@ -26,36 +31,70 @@ class IsAdminRole(BasePermission):
         if getattr(user, "is_superuser", False) or getattr(user, "is_staff", False):
             return True
 
+        # A permissao deve depender do usuario carregado pelo backend,
+        # sem fallback em payload de token para evitar inconsistencias.
         if getattr(user, "role", None) == "admin":
             return True
 
-        roles = []
-        auth = getattr(request, "auth", None)
-        if hasattr(auth, "payload"):
-            roles = auth.payload.get("roles", []) or []
-        elif isinstance(auth, dict):
-            roles = auth.get("roles", []) or []
-
-        return "admin" in roles
+        return False
 
 
 def _normalize_email_ascii(email: str) -> str:
-  try:
-      local, domain = email.split("@", 1)
-  except ValueError:
-      return email
-  local_ascii = (
-      unicodedata.normalize("NFKD", local)
-      .encode("ascii", "ignore")
-      .decode("ascii")
-  )
-  return f"{local_ascii}@{domain}"
+    try:
+        local, domain = email.split("@", 1)
+    except ValueError:
+        return email
+
+    local_ascii = (
+        unicodedata.normalize("NFKD", local)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+    return f"{local_ascii}@{domain}"
+
+
+def _is_temporary_admin_request(request) -> bool:
+    return is_temporary_admin(getattr(request, "user", None))
+
+
+def _generate_unique_username(email: str, reserved_usernames: set[str]) -> str:
+    base = email.split("@", 1)[0]
+    candidate = generate_unique_username_from_email(email)
+    if candidate not in reserved_usernames:
+        return candidate
+
+    suffix = 2
+    while True:
+        candidate = f"{base}{suffix}"
+        if candidate not in reserved_usernames and not User.objects.filter(username=candidate).exists():
+            return candidate
+        suffix += 1
+
+
+def _can_manage_user(actor, target) -> bool:
+    if not actor or not getattr(actor, "is_authenticated", False):
+        return False
+
+    if is_temporary_admin(actor):
+        # Perfil temporario pode gerenciar usuarios criados por ele
+        # e o proprio perfil (para troca de senha/dados pessoais).
+        return (
+            getattr(target, "id", None) == getattr(actor, "id", None)
+            or getattr(target, "created_by_temporary_admin_id", None) == getattr(actor, "id", None)
+        )
+
+    return getattr(target, "created_by_temporary_admin_id", None) is None
 
 
 class UsuarioListView(APIView):
     permission_classes = [IsAuthenticated, IsAdminRole]
 
     def get(self, request):
+        is_temp_admin = _is_temporary_admin_request(request)
+        queryset = User.objects.all()
+        if not is_temp_admin:
+            queryset = queryset.filter(created_by_temporary_admin__isnull=True)
+
         usuarios = [
             {
                 "id": user.id,
@@ -63,8 +102,9 @@ class UsuarioListView(APIView):
                 "email": user.email,
                 "role": getattr(user, "role", "user"),
                 "cursosCompletos": getattr(user, "cursosCompletos", 0) if hasattr(user, "cursosCompletos") else 0,
+                "can_manage": _can_manage_user(request.user, user),
             }
-            for user in User.objects.all().order_by("first_name", "email")
+            for user in queryset.order_by("first_name", "email")
         ]
         return Response(usuarios, status=status.HTTP_200_OK)
 
@@ -75,15 +115,24 @@ class ImportarUsuariosView(APIView):
     def post(self, request):
         payload = request.data
         if not isinstance(payload, dict) or "usuarios" not in payload:
-            return Response({"error": "Corpo inválido. Envie {'usuarios': [...]}."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Corpo invalido. Envie {'usuarios': [...]}."}, status=status.HTTP_400_BAD_REQUEST)
 
         usuarios = payload.get("usuarios")
         if not isinstance(usuarios, list):
             return Response({"error": "Campo 'usuarios' deve ser uma lista."}, status=status.HTTP_400_BAD_REQUEST)
 
-        emails_existentes = set(User.objects.values_list("email", flat=True))
-        usernames_existentes = set(User.objects.values_list("username", flat=True))
+        is_temp_admin = _is_temporary_admin_request(request)
+        slots_disponiveis = None
+        if is_temp_admin:
+            usuarios_gerenciados = User.objects.filter(created_by_temporary_admin=request.user).count()
+            slots_disponiveis = max(TEMP_MANAGED_USERS_LIMIT - usuarios_gerenciados, 0)
+            if slots_disponiveis == 0:
+                return Response(
+                    {"error": f"Conta temporaria pode administrar no maximo {TEMP_MANAGED_USERS_LIMIT} usuarios."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
+        emails_existentes = set(User.objects.values_list("email", flat=True))
         erros: List[dict] = []
         novos_registros: List[User] = []
         usernames_csv: set[str] = set()
@@ -91,44 +140,39 @@ class ImportarUsuariosView(APIView):
 
         for idx, item in enumerate(usuarios, start=1):
             if not isinstance(item, dict):
-                erros.append({"linha": idx, "motivo": "Linha inválida (formato incorreto)."})
+                erros.append({"linha": idx, "motivo": "Linha invalida (formato incorreto)."})
                 continue
+
             nome = str(item.get("nome", "")).strip()
-            email = str(item.get("email", "")).strip().lower()
-            email = _normalize_email_ascii(email)
+            email = _normalize_email_ascii(str(item.get("email", "")).strip().lower())
+
             if not nome or not email:
-                erros.append({"linha": idx, "motivo": "Nome e e-mail são obrigatórios.", "email": email or None})
+                erros.append({"linha": idx, "motivo": "Nome e e-mail sao obrigatorios.", "email": email or None})
                 continue
+
             try:
                 validate_email(email)
             except ValidationError:
-                erros.append({"linha": idx, "motivo": "E-mail inválido.", "email": email})
+                erros.append({"linha": idx, "motivo": "E-mail invalido.", "email": email})
                 continue
 
-            try:
-                _, domain = email.rsplit("@", 1)
-            except ValueError:
-                erros.append({"linha": idx, "motivo": "E-mail inválido.", "email": email})
+            if email in emails_existentes or email in emails_csv:
+                erros.append({"linha": idx, "motivo": "E-mail ja cadastrado.", "email": email})
                 continue
 
-            if domain.lower() != ALLOWED_EMAIL_DOMAIN:
+            if is_temp_admin and slots_disponiveis is not None and len(novos_registros) >= slots_disponiveis:
                 erros.append(
                     {
                         "linha": idx,
-                        "motivo": f"E-mail deve ser do domínio @{ALLOWED_EMAIL_DOMAIN}.",
+                        "motivo": (
+                            f"Limite de {TEMP_MANAGED_USERS_LIMIT} usuarios para conta temporaria atingido."
+                        ),
                         "email": email,
                     }
                 )
                 continue
 
-            if email in emails_existentes or email in emails_csv:
-                erros.append({"linha": idx, "motivo": "E-mail já cadastrado.", "email": email})
-                continue
-
-            username = email.split("@")[0]
-            if username in usernames_existentes or username in usernames_csv:
-                erros.append({"linha": idx, "motivo": "Prefixo de e-mail já utilizado como usuário.", "email": email})
-                continue
+            username = _generate_unique_username(email, usernames_csv)
 
             emails_existentes.add(email)
             emails_csv.add(email)
@@ -139,10 +183,8 @@ class ImportarUsuariosView(APIView):
                 username=username,
                 first_name=nome,
                 role="user",
+                created_by_temporary_admin=request.user if is_temp_admin else None,
             )
-            # Define senha provisória aleatória.
-            # Hoje essa senha não é comunicada automaticamente ao colaborador.
-            # Admin deve redefinir a senha após a importação ou implementar fluxo futuro de disparo de e-mail (fora do escopo MVP).
             user.set_password(get_random_string(16))
             novos_registros.append(user)
 
@@ -150,7 +192,7 @@ class ImportarUsuariosView(APIView):
             return Response({"errors": erros}, status=status.HTTP_409_CONFLICT)
 
         if not novos_registros:
-            return Response({"message": "Nenhum usuário novo para importar."}, status=status.HTTP_200_OK)
+            return Response({"message": "Nenhum usuario novo para importar."}, status=status.HTTP_200_OK)
 
         User.objects.bulk_create(novos_registros)
         return Response({"importados": len(novos_registros)}, status=status.HTTP_201_CREATED)
@@ -163,20 +205,25 @@ class RemoverUsuarioView(APIView):
         payload = request.data
         if not isinstance(payload, dict) or "email" not in payload:
             return Response(
-                {"error": "Corpo inválido. Envie {'email': 'usuario@dominio.com'}."},
+                {"error": "Corpo invalido. Envie {'email': 'usuario@dominio.com'}."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         email = str(payload.get("email", "")).strip().lower()
         if not email:
-            return Response({"error": "E-mail é obrigatório."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "E-mail e obrigatorio."}, status=status.HTTP_400_BAD_REQUEST)
 
-        deleted, _ = User.objects.filter(email=email).delete()
+        queryset = User.objects.filter(email=email)
+        if _is_temporary_admin_request(request):
+            queryset = queryset.filter(created_by_temporary_admin=request.user)
+        else:
+            queryset = queryset.filter(created_by_temporary_admin__isnull=True)
 
+        deleted, _ = queryset.delete()
         if deleted == 0:
-            return Response({"error": "Usuário não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "Usuario nao encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
-        return Response({"message": "Usuário removido com sucesso."}, status=status.HTTP_200_OK)
+        return Response({"message": "Usuario removido com sucesso."}, status=status.HTTP_200_OK)
 
 
 class CriarUsuarioView(APIView):
@@ -185,51 +232,56 @@ class CriarUsuarioView(APIView):
     def post(self, request):
         payload = request.data
         if not isinstance(payload, dict):
-            return Response({"error": "Corpo inválido."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Corpo invalido."}, status=status.HTTP_400_BAD_REQUEST)
 
         nome = str(payload.get("nome", "")).strip()
         email = str(payload.get("email", "")).strip().lower()
         senha = str(payload.get("password", "")).strip()
         role = str(payload.get("role", "user")).strip() or "user"
+        is_temp_admin = _is_temporary_admin_request(request)
 
         if not nome:
-            return Response({"error": "Nome é obrigatório."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Nome e obrigatorio."}, status=status.HTTP_400_BAD_REQUEST)
 
         if not email:
-            return Response({"error": "E-mail é obrigatório."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "E-mail e obrigatorio."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             validate_email(email)
         except ValidationError:
-            return Response({"error": "E-mail inválido."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            _, domain = email.rsplit("@", 1)
-        except ValueError:
-            return Response({"error": "E-mail inválido."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if domain.lower() != ALLOWED_EMAIL_DOMAIN:
-            return Response(
-                {"error": f"E-mail deve ser do domínio @{ALLOWED_EMAIL_DOMAIN}."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"error": "E-mail invalido."}, status=status.HTTP_400_BAD_REQUEST)
 
         if not senha or len(senha) < 6:
             return Response({"error": "Senha deve ter pelo menos 6 caracteres."}, status=status.HTTP_400_BAD_REQUEST)
 
         if role not in ("admin", "user"):
-            return Response({"error": "Role inválida."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Role invalida."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if is_temp_admin and role != "user":
+            return Response(
+                {"error": "Conta temporaria pode criar apenas usuarios com role user."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if is_temp_admin:
+            usuarios_gerenciados = User.objects.filter(created_by_temporary_admin=request.user).count()
+            if usuarios_gerenciados >= TEMP_MANAGED_USERS_LIMIT:
+                return Response(
+                    {"error": f"Conta temporaria pode administrar no maximo {TEMP_MANAGED_USERS_LIMIT} usuarios."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         if User.objects.filter(email=email).exists():
-            return Response({"error": "E-mail já cadastrado."}, status=status.HTTP_409_CONFLICT)
+            return Response({"error": "E-mail ja cadastrado."}, status=status.HTTP_409_CONFLICT)
 
-        username = email.split("@")[0]
+        username = _generate_unique_username(email, set())
 
         user = User(
             email=email,
             username=username,
             first_name=nome,
             role=role,
+            created_by_temporary_admin=request.user if is_temp_admin else None,
         )
         user.set_password(senha)
         user.save()
@@ -251,7 +303,7 @@ class AtualizarUsuarioView(APIView):
     def post(self, request):
         payload = request.data
         if not isinstance(payload, dict):
-            return Response({"error": "Corpo inválido."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Corpo invalido."}, status=status.HTTP_400_BAD_REQUEST)
 
         email = str(payload.get("email", "")).strip().lower()
         nome = payload.get("nome")
@@ -259,18 +311,43 @@ class AtualizarUsuarioView(APIView):
         role = payload.get("role")
 
         if not email:
-            return Response({"error": "E-mail é obrigatório."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "E-mail e obrigatorio."}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            return Response({"error": "Usuário não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        is_temp_admin = _is_temporary_admin_request(request)
+        queryset = User.objects.filter(email=email)
+        if is_temp_admin:
+            queryset = queryset.filter(
+                Q(created_by_temporary_admin=request.user) | Q(id=request.user.id)
+            )
+        else:
+            queryset = queryset.filter(created_by_temporary_admin__isnull=True)
+
+        user = queryset.first()
+        if user is None:
+            return Response({"error": "Usuario nao encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
         if isinstance(nome, str) and nome.strip():
             user.first_name = nome.strip()
 
         if isinstance(role, str) and role.strip() in ("admin", "user"):
-            user.role = role.strip()
+            requested_role = role.strip()
+            if is_temp_admin:
+                is_self_user = user.id == request.user.id
+                current_role = str(getattr(user, "role", "user") or "user")
+
+                if is_self_user and requested_role != current_role:
+                    return Response(
+                        {"error": "Conta temporaria nao pode alterar o proprio perfil de acesso."},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+                if (not is_self_user) and requested_role != "user":
+                    return Response(
+                        {"error": "Conta temporaria nao pode promover usuario para admin."},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+            user.role = requested_role
 
         if isinstance(senha, str) and senha.strip():
             if len(senha.strip()) < 6:
