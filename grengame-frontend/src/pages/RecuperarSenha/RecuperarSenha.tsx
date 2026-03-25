@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import './RecuperarSenha.css';
 import { API_CONFIG_ERROR, API_URL } from "../../config/api";
+import { fetchWithTimeout } from "../../utils/fetchWithTimeout";
 
 export default function RecuperarSenha() {
   const [email, setEmail] = useState('');
@@ -22,11 +23,11 @@ export default function RecuperarSenha() {
         return;
       }
 
-      const response = await fetch(`${API_URL}/auth/password-reset/request/`, {
+      const response = await fetchWithTimeout(`${API_URL}/auth/password-reset/request/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
-      });
+      }, 15000);
 
       const data = await response.json();
 
@@ -39,8 +40,12 @@ export default function RecuperarSenha() {
       setTimeout(() => {
         navigate('/nova-senha', { state: { email } });
       }, 2000);
-    } catch {
-      setError('Erro de conexão. Tente novamente.');
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setError('Servidor demorou para responder. Tente novamente em alguns segundos.');
+      } else {
+        setError('Erro de conexão. Tente novamente.');
+      }
     } finally {
       setLoading(false);
     }

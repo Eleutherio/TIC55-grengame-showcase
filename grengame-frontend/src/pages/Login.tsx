@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { saveTokens } from '../utils/auth';
 import { Link } from 'react-router-dom';
 import { API_CONFIG_ERROR, API_URL } from '../config/api';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 
 const Login = () => {
     // --- ESTADO (State) ---
@@ -58,13 +59,13 @@ const Login = () => {
             // --- MUDANÇA 1: URL CORRIGIDA ---
             // O backend espera /auth/ (definido em grengame/urls.py)
             // e /login/ (definido em core/urls.py)
-            const response = await fetch(`${API_URL}/auth/login/`, {
+            const response = await fetchWithTimeout(`${API_URL}/auth/login/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ email, password }),
-            });
+            }, 15000);
 
     
             const data = await response.json();
@@ -105,8 +106,12 @@ const Login = () => {
                 }
             }
 
-        } catch {
+        } catch (error) {
             // 5. Erro de rede (back-end desligado, etc.)
+            if (error instanceof DOMException && error.name === 'AbortError') {
+                setError('Servidor demorou para responder. Tente novamente em alguns segundos.');
+                return;
+            }
             setError('Não foi possível conectar ao servidor. Tente novamente.');
         }
         // --- FIM DA INTEGRAÇÃO COM BACK-END ---
