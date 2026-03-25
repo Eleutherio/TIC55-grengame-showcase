@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import './NovaSenha.css';
-import { API_URL } from "../../config/api";
+import { API_CONFIG_ERROR, API_URL } from "../../config/api";
 
 export default function NovaSenha() {
   const location = useLocation();
@@ -72,6 +72,11 @@ export default function NovaSenha() {
     setError('');
 
     try {
+      if (!API_URL) {
+        setError(API_CONFIG_ERROR);
+        return;
+      }
+
       const verifyResponse = await fetch(`${API_URL}/auth/password-reset/verify/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -117,6 +122,11 @@ export default function NovaSenha() {
     setLoading(true);
     setError('');
     try {
+      if (!API_URL) {
+        setError(API_CONFIG_ERROR);
+        return;
+      }
+
       const response = await fetch(`${API_URL}/auth/password-reset/request/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
