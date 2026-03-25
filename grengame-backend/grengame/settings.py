@@ -54,6 +54,32 @@ try:
 except ValueError:
     TEMPORARY_FIRST_LOGIN_WINDOW_MINUTES = 30
 
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "").strip()
+SUPABASE_S3_ENDPOINT = os.getenv("SUPABASE_S3_ENDPOINT", "").strip().rstrip("/")
+SUPABASE_S3_ACCESS_KEY_ID = os.getenv(
+    "SUPABASE_S3_ACCESS_KEY_ID",
+    os.getenv("SUPABASE_ACCESS_KEY_ID", ""),
+).strip()
+SUPABASE_S3_SECRET_ACCESS_KEY = os.getenv(
+    "SUPABASE_S3_SECRET_ACCESS_KEY",
+    os.getenv("SUPABASE_SECRET_ACCESS_KEY", ""),
+).strip()
+SUPABASE_S3_REGION = os.getenv("SUPABASE_S3_REGION", "us-east-1").strip()
+
+if SUPABASE_URL and not SUPABASE_S3_ENDPOINT:
+    SUPABASE_S3_ENDPOINT = f"{SUPABASE_URL}/storage/v1/s3"
+
+USE_SUPABASE_STORAGE = all(
+    [
+        SUPABASE_URL,
+        SUPABASE_STORAGE_BUCKET,
+        SUPABASE_S3_ENDPOINT,
+        SUPABASE_S3_ACCESS_KEY_ID,
+        SUPABASE_S3_SECRET_ACCESS_KEY,
+    ]
+)
+
 
 # Application definition
 
@@ -70,6 +96,9 @@ INSTALLED_APPS = [
     'corsheaders',
     'core',
 ]
+
+if USE_SUPABASE_STORAGE and 'storages' not in INSTALLED_APPS:
+    INSTALLED_APPS.append('storages')
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -229,8 +258,40 @@ STATIC_URL = 'static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+if USE_SUPABASE_STORAGE:
+    AWS_ACCESS_KEY_ID = SUPABASE_S3_ACCESS_KEY_ID
+    AWS_SECRET_ACCESS_KEY = SUPABASE_S3_SECRET_ACCESS_KEY
+    AWS_STORAGE_BUCKET_NAME = SUPABASE_STORAGE_BUCKET
+    AWS_S3_ENDPOINT_URL = SUPABASE_S3_ENDPOINT
+    AWS_S3_REGION_NAME = SUPABASE_S3_REGION
+    AWS_S3_SIGNATURE_VERSION = "s3v4"
+    AWS_S3_ADDRESSING_STYLE = "path"
+    AWS_DEFAULT_ACL = None
+    AWS_QUERYSTRING_AUTH = False
+    AWS_S3_FILE_OVERWRITE = False
+
+    SUPABASE_PUBLIC_STORAGE_URL = os.getenv(
+        "SUPABASE_PUBLIC_STORAGE_URL",
+        f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}",
+    ).strip().rstrip("/")
+
+    STORAGES = {
+        "default": {
+            "BACKEND": "core.storage_backends.SupabaseS3Storage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+else:
+    STORAGES = {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
