@@ -87,6 +87,43 @@ BADGE_CRITERION_LABELS = {
 }
 
 
+def _resolve_uploaded_file_url(request, raw_value):
+    if raw_value is None:
+        return None
+
+    value = str(raw_value).strip()
+    if not value:
+        return None
+
+    if value.startswith(("http://", "https://")):
+        return value
+
+    normalized = value.lstrip("/")
+    if normalized.startswith("media/"):
+        normalized = normalized[len("media/"):]
+
+    for candidate in (normalized, value.lstrip("/")):
+        if not candidate:
+            continue
+        try:
+            resolved_url = default_storage.url(candidate)
+        except Exception:
+            continue
+
+        if not resolved_url:
+            continue
+        if resolved_url.startswith(("http://", "https://")):
+            return resolved_url
+        if request is not None:
+            return request.build_absolute_uri(resolved_url)
+        return resolved_url
+
+    fallback_relative = f"/media/{normalized}" if normalized else "/media/"
+    if request is not None:
+        return request.build_absolute_uri(fallback_relative)
+    return fallback_relative
+
+
 def _is_temporary_admin_request(request) -> bool:
     return is_temporary_admin(getattr(request, "user", None))
 
@@ -162,14 +199,7 @@ class UserMeView(APIView):
         user = request.user
         
         # Construir URL completa do avatar se existir
-        avatar_url = None
-        if user.avatar_url:
-            # Se já for uma URL completa (http/https), usar como está
-            if user.avatar_url.startswith('http'):
-                avatar_url = user.avatar_url
-            else:
-                # Caso contrário, construir URL completa com MEDIA_URL
-                avatar_url = request.build_absolute_uri(f'/media/{user.avatar_url}')
+        avatar_url = _resolve_uploaded_file_url(request, user.avatar_url)
         
         return Response({
             'id': user.id,
@@ -217,13 +247,14 @@ class UserUpdateView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            filename = f"{uuid4().hex}{ext}"
+            filename = f"avatars/{uuid4().hex}{ext}"
             saved_path = default_storage.save(filename, avatar_file)
             user.avatar_url = saved_path
         elif 'avatar_url' in serializer.validated_data:
             user.avatar_url = serializer.validated_data['avatar_url']
         
         user.save()
+        avatar_url = _resolve_uploaded_file_url(request, user.avatar_url)
         
         return Response({
             'id': user.id,
@@ -231,8 +262,8 @@ class UserUpdateView(APIView):
             'first_name': user.first_name,
             'last_name': user.last_name,
             'role': user.role,
-            'avatar': user.avatar_url,  # Retorna como 'avatar' para compatibilidade com frontend
-            'avatar_url': user.avatar_url,
+            'avatar': avatar_url,
+            'avatar_url': avatar_url,
         }, status=status.HTTP_200_OK)
 
 
@@ -1013,28 +1044,7 @@ class LeaderboardMixin(APIView):
     def _avatar_url(request, user):
         if user is None:
             return ""
-
-        raw_avatar = getattr(user, "avatar_url", None)
-        if not raw_avatar:
-            return ""
-
-        avatar = str(raw_avatar).strip()
-        if not avatar:
-            return ""
-
-        if avatar.startswith(("http://", "https://")):
-            return avatar
-
-        normalized = avatar.lstrip("/")
-        if normalized.startswith("media/"):
-            relative_path = f"/{normalized}"
-        else:
-            relative_path = f"/media/{normalized}"
-
-        if request is None:
-            return relative_path
-
-        return request.build_absolute_uri(relative_path)
+        return _resolve_uploaded_file_url(request, getattr(user, "avatar_url", None)) or ""
 
     def _build_user_badges_map(self, user_ids, request, game=None):
         if not user_ids:
@@ -1953,7 +1963,7 @@ class DashboardTopCollaboratorsView(APIView):
                 'posicao': idx,
                 'nome': f"{entry.user.first_name} {entry.user.last_name}".strip() or entry.user.email,
                 'email': entry.user.email,
-                'avatar_url': entry.user.avatar_url or None,
+                'avatar_url': _resolve_uploaded_file_url(request, entry.user.avatar_url),
                 'xp_total': entry.total_points,
                 'missoes_concluidas': entry.missions_completed,
             })
