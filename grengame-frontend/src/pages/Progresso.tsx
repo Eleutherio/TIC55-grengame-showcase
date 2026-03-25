@@ -6,12 +6,14 @@ import PerfilProgressoCard from "../components/PerfilProgressoCard";
 import CardBadgesProgresso, {
   type BadgeChallenge,
 } from "../components/CardBadgesProgresso";
+import TemporaryUserBadge from "../components/TemporaryUserBadge";
 
 type Perfil = {
   first_name?: string;
   last_name?: string;
   avatar_url?: string;
-
+  is_temporary_account?: boolean;
+  temporary_expires_at?: string | null;
 };
 
 type GameProgressApi = {
@@ -411,6 +413,7 @@ export default function Progresso() {
     <div className="progressoContainer" aria-busy={isLoading} aria-live="polite">
       <header className="pageHeader">
         <h1>Meu Progresso</h1>
+        {Boolean(perfil?.is_temporary_account) && <TemporaryUserBadge />}
       </header>
 
       <div className="cardsStack">

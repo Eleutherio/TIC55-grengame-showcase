@@ -99,6 +99,33 @@
     text-decoration: underline;
 }
 
+.loginAuxLinks {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.tempAccessText {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #f3f3f3;
+    text-align: center;
+    max-width: 360px;
+    line-height: 1.35;
+}
+
+.tempAccessLink {
+    color: #FFC800;
+    text-decoration: none;
+    font-weight: 700;
+}
+
+.tempAccessLink:hover {
+    text-decoration: underline;
+}
+
 /* Mensagem de erro */
 .errorMessage {
     color: #FFCDD2; /* Vermelho claro para erro */
@@ -115,4 +142,16 @@
 
 .gLetter2 {
     color: #fb2d2d; 
+}
+
+@media (max-width: 640px) {
+    .loginContainer {
+        width: 100%;
+        max-width: 420px;
+        padding: 28px 20px;
+    }
+
+    .tempAccessText {
+        max-width: 100%;
+    }
 }
