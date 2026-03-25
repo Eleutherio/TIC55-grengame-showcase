@@ -300,10 +300,16 @@ export default function AdministrarMissoes() {
 
         const normalized = data.map((rawMission: unknown, index: number) => {
           const mission = asRecord(rawMission);
+          const missionTypeRaw =
+            typeof mission.mission_type === "string"
+              ? mission.mission_type
+              : typeof mission.type === "string"
+                ? mission.type
+                : undefined;
           return {
             id: String(mission.id ?? mission.pk ?? `mission-${index}`),
             gameId: String(mission.game ?? mission.game_id ?? selectedGameId),
-            type: normalizeMissionType(mission.mission_type ?? mission.type),
+            type: normalizeMissionType(missionTypeRaw),
             title: String(mission.title ?? mission.name ?? `Missão ${index + 1}`),
             description: String(mission.description ?? ""),
             points: Number(mission.points_value ?? mission.points ?? 0),
