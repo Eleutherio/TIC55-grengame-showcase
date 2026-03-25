@@ -45,5 +45,6 @@ urlpatterns = [
     path('gamification/badges/available/', AvailableBadgesView.as_view(), name='gamification-badges-available'),
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Em deploy sem proxy de arquivos (ex.: Render free), o próprio Django
+# precisa expor MEDIA_URL para uploads de banner/avatar funcionarem.
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
