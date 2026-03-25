@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import './NovaSenha.css';
 import { API_CONFIG_ERROR, API_URL } from "../../config/api";
+import { fetchWithTimeout } from "../../utils/fetchWithTimeout";
 
 export default function NovaSenha() {
   const location = useLocation();
@@ -77,12 +78,12 @@ export default function NovaSenha() {
         return;
       }
 
-      const verifyResponse = await fetch(`${API_URL}/auth/password-reset/verify/`, {
+      const verifyResponse = await fetchWithTimeout(`${API_URL}/auth/password-reset/verify/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ email, code })
-      });
+      }, 15000);
 
       const verifyData = await verifyResponse.json();
 
@@ -91,7 +92,7 @@ export default function NovaSenha() {
         return;
       }
 
-      const confirmResponse = await fetch(`${API_URL}/auth/password-reset/confirm/`, {
+      const confirmResponse = await fetchWithTimeout(`${API_URL}/auth/password-reset/confirm/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -100,7 +101,7 @@ export default function NovaSenha() {
           new_password: newPassword,
           confirm_password: confirmPassword
         })
-      });
+      }, 15000);
 
       const confirmData = await confirmResponse.json();
 
@@ -111,8 +112,12 @@ export default function NovaSenha() {
 
       setSuccess('Senha alterada com sucesso!');
       setTimeout(() => navigate('/login'), 2000);
-    } catch {
-      setError('Erro de conexão.');
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setError('Servidor demorou para responder. Tente novamente em alguns segundos.');
+      } else {
+        setError('Erro de conexão.');
+      }
     } finally {
       setLoading(false);
     }
@@ -127,11 +132,11 @@ export default function NovaSenha() {
         return;
       }
 
-      const response = await fetch(`${API_URL}/auth/password-reset/request/`, {
+      const response = await fetchWithTimeout(`${API_URL}/auth/password-reset/request/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
-      });
+      }, 15000);
       if (response.ok) {
         setSuccess('Código reenviado!');
         setTimeout(() => setSuccess(''), 3000);
