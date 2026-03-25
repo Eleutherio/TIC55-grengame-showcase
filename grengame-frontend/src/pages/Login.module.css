@@ -73,7 +73,7 @@
     font-size: 1rem;
     font-weight: bold;
     cursor: pointer;
-    transition: background-color 0.3s;
+    transition: background-color 0.2s ease, transform 0.08s ease, filter 0.2s ease, opacity 0.2s ease;
 }
 
 /* Botão "Entrar" (Amarelo) */
@@ -84,6 +84,21 @@
 
 .btnPrimary:hover {
     background-color: #FFC800;
+}
+
+.btnPrimary:active {
+    transform: scale(0.985);
+    filter: brightness(0.95);
+}
+
+.btnPrimaryLoading {
+    background-color: #e6b400;
+    cursor: progress;
+    opacity: 0.9;
+}
+
+.btnPrimary:disabled {
+    cursor: progress;
 }
 
 
@@ -142,6 +157,27 @@
 
 .gLetter2 {
     color: #fb2d2d; 
+}
+
+.passwordWrapper {
+    position: relative;
+}
+
+.passwordWrapper input {
+    padding-right: 46px;
+}
+
+.passwordToggle {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    transform: translateY(-50%);
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 1.05rem;
+    line-height: 1;
+    padding: 2px;
 }
 
 @media (max-width: 640px) {

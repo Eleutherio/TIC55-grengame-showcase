@@ -28,6 +28,7 @@ export default function EditUsuarioModal({
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "user">("user");
   const [senha, setSenha] = useState("");
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState("");
   const [isSalvando, setIsSalvando] = useState(false);
 
@@ -37,6 +38,7 @@ export default function EditUsuarioModal({
       setEmail("");
       setRole("user");
       setSenha("");
+      setMostrarSenha(false);
       setErro("");
       setIsSalvando(false);
       return;
@@ -45,6 +47,7 @@ export default function EditUsuarioModal({
     setEmail(usuario.email);
     setRole(usuario.role);
     setSenha("");
+    setMostrarSenha(false);
     setErro("");
     setIsSalvando(false);
   }, [isOpen, usuario]);
@@ -87,9 +90,7 @@ export default function EditUsuarioModal({
       onClose();
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Não foi possível atualizar o usuário. Tente novamente.";
+        error instanceof Error ? error.message : "Não foi possível atualizar o usuário. Tente novamente.";
       setErro(message);
     } finally {
       setIsSalvando(false);
@@ -149,21 +150,30 @@ export default function EditUsuarioModal({
             <option value="user">Usuário</option>
             <option value="admin">Administrador</option>
           </select>
-          {isRoleLocked && (
-            <p className="text-xs text-gray-500">Não é possível alterar o próprio perfil de acesso.</p>
-          )}
+          {isRoleLocked && <p className="text-xs text-gray-500">Não é possível alterar o próprio perfil de acesso.</p>}
 
           <label className="block text-sm font-medium text-gray-700" htmlFor="edit-senha">
             Nova senha (opcional)
           </label>
-          <input
-            id="edit-senha"
-            type="password"
-            value={senha}
-            onChange={(event) => setSenha(event.target.value)}
-            placeholder="Deixe em branco para manter a senha atual"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-[#ffc800] focus:outline-none focus:ring-2 focus:ring-[#ffc800]"
-          />
+          <div className="relative">
+            <input
+              id="edit-senha"
+              type={mostrarSenha ? "text" : "password"}
+              value={senha}
+              onChange={(event) => setSenha(event.target.value)}
+              placeholder="Deixe em branco para manter a senha atual"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 pr-10 text-sm text-gray-900 shadow-sm focus:border-[#ffc800] focus:outline-none focus:ring-2 focus:ring-[#ffc800]"
+            />
+            <button
+              type="button"
+              onClick={() => setMostrarSenha((value) => !value)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-base leading-none text-gray-500 hover:text-gray-700"
+              aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
+              aria-pressed={mostrarSenha}
+            >
+              {mostrarSenha ? "🙈" : "👁"}
+            </button>
+          </div>
 
           {erro && <p className="text-sm font-medium text-red-600">{erro}</p>}
         </div>
