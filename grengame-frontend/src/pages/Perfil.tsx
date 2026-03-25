@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import "./Perfil.css";
 import { notifyUserDataUpdated } from "../utils/auth";
 import { API_URL } from "../config/api";
+import TemporaryUserBadge from "../components/TemporaryUserBadge";
 
 type UserMe = {
   id: number;
@@ -12,6 +13,8 @@ type UserMe = {
   last_name: string;
   avatar?: string;
   avatar_url?: string;
+  is_temporary_account?: boolean;
+  temporary_expires_at?: string | null;
 };
 
 type Badge = {
@@ -888,9 +891,6 @@ export default function Perfil() {
   }
 
   if (errorCode || !user) {
-    if (errorCode) {
-    }
-
     return (
       <div className="profilePage">
         <div className="profileContainer">
@@ -1223,6 +1223,11 @@ export default function Perfil() {
         <div className="profileContainer">
           <div className="pageHeader">
             <h1 className="pageTitle">Meu Perfil</h1>
+            {Boolean(user.is_temporary_account) && (
+              <div className="temporaryBadgeWrap">
+                <TemporaryUserBadge />
+              </div>
+            )}
           </div>
 
           <div className="centerWrapper">

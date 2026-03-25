@@ -22,12 +22,14 @@ const AdministrarMissoes = lazy(() => import("../pages/AdministrarMissoes"));
 const AdministrarBadges = lazy(() => import("../pages/AdministrarBadges"));
 const Trilhas = lazy(() => import("../pages/Trilhas"));
 const Missao = lazy(() => import("../pages/Missao"));
+const AcessoTemporario = lazy(() => import("../pages/AcessoTemporario"));
 
 export const router = createBrowserRouter([
   // Rota pública - Login
   { path: "/login", element: withSuspense(<Login />) },
   { path: "/recuperar-senha", element: withSuspense(<RecuperarSenha />) },
   { path: "/nova-senha", element: withSuspense(<NovaSenha />) },
+  { path: "/acesso-temporario", element: withSuspense(<AcessoTemporario />) },
 
   // Rota protegida - Página inicial (Menu Inicial) - requer autenticação
   {

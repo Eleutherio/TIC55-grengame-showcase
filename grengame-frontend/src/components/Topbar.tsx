@@ -5,6 +5,13 @@ import trophyIcon from "../assets/img/trophy.svg";
 import avatarIcon from "../assets/img/avatar.svg";
 import { AUTH_CHANGE_EVENT, USER_DATA_UPDATED_EVENT } from "../utils/auth";
 import { API_URL } from "../config/api";
+import TemporaryUserBadge from "./TemporaryUserBadge";
+import TemporaryProfileInfoModal from "./TemporaryProfileInfoModal";
+import {
+  dismissTemporaryNoticeForCurrentToken,
+  getTemporaryNoticeStorageKeyForToken,
+  isTemporaryNoticeDismissedForCurrentToken,
+} from "../utils/temporaryAccess";
 
 const API_BASE_URL = API_URL;
 const API_BASE = API_BASE_URL.replace(/\/+$/, "");
@@ -18,6 +25,8 @@ type Me = {
   last_name?: string;
   email?: string;
   avatar_url?: string;
+  is_temporary_account?: boolean;
+  temporary_expires_at?: string | null;
 };
 
 type UserStats = {
@@ -115,8 +124,10 @@ export default function Topbar() {
   const [authToken, setAuthToken] = useState<string | null>(() =>
     localStorage.getItem(ACCESS_TOKEN_KEY)
   );
+  const [isTemporaryModalOpen, setIsTemporaryModalOpen] = useState(false);
   const [userDataVersion, setUserDataVersion] = useState(0);
   const lastScrollY = useRef(0);
+  const shownTemporaryModalTokenKey = useRef<string | null>(null);
 
   const matches = useMatches();
   const breadcrumbs = matches
@@ -289,9 +300,42 @@ export default function Topbar() {
     return email || "";
   })();
   const avatarSrc = me?.avatar_url ? buildAvatarSrc(me.avatar_url) : "";
+  const isTemporaryUser = Boolean(me?.is_temporary_account);
+  const temporaryExpiresAt = me?.temporary_expires_at ?? null;
+
+  useEffect(() => {
+    if (!authToken || !isTemporaryUser) {
+      setIsTemporaryModalOpen(false);
+      shownTemporaryModalTokenKey.current = null;
+      return;
+    }
+
+    const tokenNoticeKey = getTemporaryNoticeStorageKeyForToken(authToken);
+    if (!tokenNoticeKey) {
+      setIsTemporaryModalOpen(false);
+      return;
+    }
+
+    if (shownTemporaryModalTokenKey.current === tokenNoticeKey) {
+      return;
+    }
+
+    shownTemporaryModalTokenKey.current = tokenNoticeKey;
+    if (!isTemporaryNoticeDismissedForCurrentToken()) {
+      setIsTemporaryModalOpen(true);
+    }
+  }, [authToken, isTemporaryUser]);
+
+  const handleCloseTemporaryModal = (dontShowAgain: boolean) => {
+    if (dontShowAgain) {
+      dismissTemporaryNoticeForCurrentToken();
+    }
+    setIsTemporaryModalOpen(false);
+  };
 
   return (
-    <header
+    <>
+      <header
       className={`mx-6 mt-6 flex items-center gap-4 rounded-2xl bg-roxo-forte pl-4 text-white shadow-lg shadow-black/25 transition-transform duration-300 ease-in-out ${
         isVisible ? "translate-y-0" : "-translate-y-[calc(100%+3rem)]"
       }`}
@@ -402,10 +446,19 @@ export default function Topbar() {
             >
               {userDisplayName}
             </p>
+            {isTemporaryUser && <TemporaryUserBadge compact className="mt-1" />}
           </div>
         </Link>
       </aside>
-    </header>
+      </header>
+
+      <TemporaryProfileInfoModal
+        isOpen={isTemporaryModalOpen}
+        displayName={userDisplayName || "Usuário"}
+        expiresAt={temporaryExpiresAt}
+        onClose={handleCloseTemporaryModal}
+      />
+    </>
   );
 }
 

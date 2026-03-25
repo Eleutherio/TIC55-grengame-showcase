@@ -22,11 +22,13 @@ const NovaSenha = lazy(() => import("../pages/RecuperarSenha/NovaSenha"));
 const NotFound = lazy(() => import("../pages/NotFound"));
 const Trilhas = lazy(() => import("../pages/Trilhas"));
 const Missao = lazy(() => import("../pages/Missao"));
+const AcessoTemporario = lazy(() => import("../pages/AcessoTemporario"));
 
 export const routerMobile = createBrowserRouter([
   { path: "/login", element: withSuspense(<Login />) },
   { path: "/recuperar-senha", element: withSuspense(<RecuperarSenha />) },
   { path: "/nova-senha", element: withSuspense(<NovaSenha />) },
+  { path: "/acesso-temporario", element: withSuspense(<AcessoTemporario />) },
 
   {
     path: "/",

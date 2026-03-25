@@ -43,6 +43,12 @@
   padding: 0 12px 6px;
 }
 
+.temporaryBadgeWrap {
+  margin-top: 10px;
+  display: flex;
+  justify-content: center;
+}
+
 .profileCard {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.94)) padding-box,
     linear-gradient(135deg, #7c5bff, #ff8ed8) border-box;

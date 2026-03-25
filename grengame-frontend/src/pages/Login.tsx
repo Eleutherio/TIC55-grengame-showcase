@@ -100,7 +100,7 @@ const Login = () => {
                 }
             }
 
-        } catch (err) {
+        } catch {
             // 5. Erro de rede (back-end desligado, etc.)
             setError('Não foi possível conectar ao servidor. Tente novamente.');
         }
@@ -125,7 +125,7 @@ const Login = () => {
                         <input 
                             type="email" 
                             id="email" 
-                            placeholder="nome.sobrenome@grendene.com"
+                            placeholder="nome.sobrenome@gmail.com"
                             value={email} // O valor do input é controlado pelo 'state'
                             onChange={e => setEmail(e.target.value)} // Atualiza o 'state' ao digitar
                         />
@@ -154,13 +154,21 @@ const Login = () => {
                         </button>
                     </div>
                     
-                    <Link 
-                        to="/recuperar-senha"
-                        className={styles.forgotPassword}>
-
-                        Esqueci minha senha
-
-                    </Link>
+                    <div className={styles.loginAuxLinks}>
+                        <Link
+                            to="/recuperar-senha"
+                            className={styles.forgotPassword}
+                        >
+                            Esqueci minha senha
+                        </Link>
+                        <p className={styles.tempAccessText}>
+                            Quer testar a plataforma?{" "}
+                            <Link to="/acesso-temporario" className={styles.tempAccessLink}>
+                                clique aqui
+                            </Link>{" "}
+                            e solicite seu login temporário.
+                        </p>
+                    </div>
                 </form>
             </div>
         </div>
