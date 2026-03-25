@@ -58,7 +58,7 @@ class TestPasswordResetRequest:
         assert response_exists.status_code == response_not_exists.status_code == 200
         assert response_exists.data == response_not_exists.data
 
-    def test_request_rate_limiting(self, api_client, create_user):
+    def test_request_allows_multiple_attempts_temporarily(self, api_client, create_user):
         user = create_user(email='usuario1@grendene.com.br')
         for _ in range(3):
             PasswordResetToken.objects.create(
@@ -69,7 +69,8 @@ class TestPasswordResetRequest:
         response = api_client.post('/auth/password-reset/request/', {
             'email': 'usuario1@grendene.com.br'
         }, format='json')
-        assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+        assert response.status_code == status.HTTP_200_OK
+        assert PasswordResetToken.objects.filter(user=user).count() == 4
 
 
 @pytest.mark.django_db
