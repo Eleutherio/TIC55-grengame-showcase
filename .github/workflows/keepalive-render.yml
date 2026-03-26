@@ -1,0 +1,16 @@
+name: Keepalive Render Backend
+
+on:
+  schedule:
+    # BRT (UTC-3): seg-sex, 08:00-20:59, a cada 10 min
+    - cron: "*/10 11-23 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  ping-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          set -e
+          curl -fsS --max-time 30 https://grengame-backend.onrender.com/health/
