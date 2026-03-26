@@ -79,7 +79,7 @@ class Game(models.Model):
     is_active = models.BooleanField(default=True, verbose_name="Ativo")
     created_by = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="games_created",
@@ -194,7 +194,7 @@ class Mission(models.Model):
     is_active = models.BooleanField(default=True, verbose_name="Ativa")
     created_by = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="missions_created",

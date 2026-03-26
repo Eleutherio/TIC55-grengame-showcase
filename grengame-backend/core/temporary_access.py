@@ -36,14 +36,14 @@ def visible_games_queryset_for(user, base_queryset=None):
             | Q(created_by__is_temporary_account=False)
         )
 
-    return queryset.filter(Q(created_by__isnull=True) | Q(created_by__is_temporary_account=False))
+    return queryset
 
 
 def editable_games_queryset_for(user, base_queryset=None):
     queryset = base_queryset if base_queryset is not None else Game.objects.all()
     if is_temporary_admin(user):
         return queryset.filter(created_by=user)
-    return queryset.filter(Q(created_by__isnull=True) | Q(created_by__is_temporary_account=False))
+    return queryset
 
 
 def visible_missions_queryset_for(user, base_queryset=None):
@@ -59,16 +59,14 @@ def visible_missions_queryset_for(user, base_queryset=None):
             | Q(created_by__is_temporary_account=False)
         )
 
-    return queryset.filter(game_id__in=visible_games).filter(
-        Q(created_by__isnull=True) | Q(created_by__is_temporary_account=False)
-    )
+    return queryset.filter(game_id__in=visible_games)
 
 
 def editable_missions_queryset_for(user, base_queryset=None):
     queryset = base_queryset if base_queryset is not None else Mission.objects.all()
     if is_temporary_admin(user):
         return queryset.filter(created_by=user)
-    return queryset.filter(Q(created_by__isnull=True) | Q(created_by__is_temporary_account=False))
+    return queryset
 
 
 def build_temporary_expiration():
