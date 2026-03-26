@@ -99,6 +99,24 @@ class UserUpdateSerializer(serializers.Serializer):
     first_name = serializers.CharField(required=False, allow_blank=True)
     last_name = serializers.CharField(required=False, allow_blank=True)
     avatar = serializers.FileField(required=False, allow_null=True)
+    current_password = serializers.CharField(
+        required=False,
+        write_only=True,
+        allow_blank=False,
+        trim_whitespace=False,
+    )
+    new_password = serializers.CharField(
+        required=False,
+        write_only=True,
+        allow_blank=False,
+        trim_whitespace=False,
+    )
+    confirm_password = serializers.CharField(
+        required=False,
+        write_only=True,
+        allow_blank=False,
+        trim_whitespace=False,
+    )
     avatar_url = serializers.CharField(
         required=False,
         allow_blank=True,

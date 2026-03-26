@@ -335,6 +335,12 @@ type UpdateNameResponse = {
   last_name: string;
 };
 
+type UpdatePasswordPayload = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+};
+
 type Progress = {
   level: string | number;
   xp: number;
@@ -378,6 +384,43 @@ async function updateUserNameApi(
   }
 
   return { first_name: firstName, last_name: lastName };
+}
+
+async function updateUserPasswordApi({
+  currentPassword,
+  newPassword,
+  confirmPassword,
+}: UpdatePasswordPayload): Promise<void> {
+  const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+  if (!token) {
+    throw new Error("NO_TOKEN");
+  }
+
+  const response = await fetch(`${API_URL}/auth/update/`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+      confirm_password: confirmPassword,
+    }),
+  });
+
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("UNAUTHORIZED");
+  }
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    const errorMessage =
+      typeof data?.error === "string" && data.error.trim()
+        ? data.error
+        : "Não foi possível atualizar a senha. Tente novamente.";
+    throw new Error(errorMessage);
+  }
 }
 
 async function fetchUserProgress(): Promise<Progress> {
@@ -781,6 +824,15 @@ export default function Perfil() {
   const [nameError, setNameError] = useState<string | null>(null);
   const [isSavingName, setIsSavingName] = useState(false);
   const [nameSuccess, setNameSuccess] = useState<string | null>(null);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState("");
+  const [newPasswordInput, setNewPasswordInput] = useState("");
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [progressError, setProgressError] = useState<string | null>(null);
   const [badges, setBadges] = useState<Badge[]>([]);
@@ -1165,6 +1217,70 @@ export default function Perfil() {
     }
   };
 
+  const handleOpenPasswordModal = () => {
+    setCurrentPasswordInput("");
+    setNewPasswordInput("");
+    setConfirmPasswordInput("");
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+    setPasswordError(null);
+    setIsPasswordModalOpen(true);
+  };
+
+  const handleCancelPassword = () => {
+    if (isSavingPassword) return;
+    setIsPasswordModalOpen(false);
+    setPasswordError(null);
+  };
+
+  const handleSavePassword = async () => {
+    const currentPassword = currentPasswordInput.trim();
+    const newPassword = newPasswordInput.trim();
+    const confirmPassword = confirmPasswordInput.trim();
+
+    if (!currentPassword) {
+      setPasswordError("Informe a senha atual.");
+      return;
+    }
+
+    if (!newPassword) {
+      setPasswordError("Informe a nova senha.");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordError("A nova senha deve ter no mínimo 8 caracteres.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Nova senha e confirmação não coincidem.");
+      return;
+    }
+
+    setIsSavingPassword(true);
+    setPasswordError(null);
+
+    try {
+      await updateUserPasswordApi({
+        currentPassword,
+        newPassword,
+        confirmPassword,
+      });
+      setIsPasswordModalOpen(false);
+    } catch (err) {
+      const message = (err as Error).message;
+      if (message === "UNAUTHORIZED") {
+        navigate("/login", { replace: true });
+        return;
+      }
+      setPasswordError(message || "Não foi possível atualizar a senha.");
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
+
   const progressLevelLabel = progress?.level ?? "-";
   const xpValue = progress?.xp ?? 0;
   const xpRemaining = progress?.xpToNext;
@@ -1325,6 +1441,13 @@ export default function Perfil() {
                   onClick={handleOpenNameModal}
                 >
                   Trocar nome
+                </button>
+                <button
+                  className="btnSecondary"
+                  type="button"
+                  onClick={handleOpenPasswordModal}
+                >
+                  Trocar senha
                 </button>
               </div>
             </div>
@@ -1618,6 +1741,140 @@ export default function Perfil() {
               >
                 {isSavingName ? "Salvando..." : "Salvar nome"}
                 {isSavingName && (
+                  <span className="btnSpinner" aria-hidden="true" />
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {isPasswordModalOpen && (
+        <div className="avatarModalOverlay">
+          <div className="avatarModal">
+            <div className="avatarModalHeader">
+              <h3>Trocar senha</h3>
+              <p>
+                Informe sua senha atual e defina uma nova senha de no mínimo 8
+                caracteres.
+              </p>
+            </div>
+
+            <div className="avatarModalBody nameModalBody">
+              <div className="avatarControls nameControls">
+                <label htmlFor="currentPasswordInput" className="inputLabel">
+                  Senha atual
+                </label>
+                <div className="passwordFieldWrapper">
+                  <input
+                    id="currentPasswordInput"
+                    type={showCurrentPassword ? "text" : "password"}
+                    className="textField passwordFieldInput"
+                    value={currentPasswordInput}
+                    onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                    disabled={isSavingPassword}
+                    aria-invalid={!!passwordError}
+                  />
+                  <button
+                    type="button"
+                    className="passwordToggleButton"
+                    onClick={() => setShowCurrentPassword((prev) => !prev)}
+                    aria-label={
+                      showCurrentPassword ? "Ocultar senha atual" : "Mostrar senha atual"
+                    }
+                    aria-pressed={showCurrentPassword}
+                  >
+                    <img
+                      src={showCurrentPassword ? "/eye-closed.png" : "/eye-open.png"}
+                      alt=""
+                      aria-hidden="true"
+                      className="passwordToggleIcon"
+                    />
+                  </button>
+                </div>
+
+                <label htmlFor="newPasswordInput" className="inputLabel">
+                  Nova senha
+                </label>
+                <div className="passwordFieldWrapper">
+                  <input
+                    id="newPasswordInput"
+                    type={showNewPassword ? "text" : "password"}
+                    className="textField passwordFieldInput"
+                    value={newPasswordInput}
+                    onChange={(e) => setNewPasswordInput(e.target.value)}
+                    disabled={isSavingPassword}
+                    aria-invalid={!!passwordError}
+                  />
+                  <button
+                    type="button"
+                    className="passwordToggleButton"
+                    onClick={() => setShowNewPassword((prev) => !prev)}
+                    aria-label={showNewPassword ? "Ocultar nova senha" : "Mostrar nova senha"}
+                    aria-pressed={showNewPassword}
+                  >
+                    <img
+                      src={showNewPassword ? "/eye-closed.png" : "/eye-open.png"}
+                      alt=""
+                      aria-hidden="true"
+                      className="passwordToggleIcon"
+                    />
+                  </button>
+                </div>
+
+                <label htmlFor="confirmPasswordInput" className="inputLabel">
+                  Confirmar nova senha
+                </label>
+                <div className="passwordFieldWrapper">
+                  <input
+                    id="confirmPasswordInput"
+                    type={showConfirmPassword ? "text" : "password"}
+                    className="textField passwordFieldInput"
+                    value={confirmPasswordInput}
+                    onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                    disabled={isSavingPassword}
+                    aria-invalid={!!passwordError}
+                  />
+                  <button
+                    type="button"
+                    className="passwordToggleButton"
+                    onClick={() => setShowConfirmPassword((prev) => !prev)}
+                    aria-label={
+                      showConfirmPassword
+                        ? "Ocultar confirmação de senha"
+                        : "Mostrar confirmação de senha"
+                    }
+                    aria-pressed={showConfirmPassword}
+                  >
+                    <img
+                      src={showConfirmPassword ? "/eye-closed.png" : "/eye-open.png"}
+                      alt=""
+                      aria-hidden="true"
+                      className="passwordToggleIcon"
+                    />
+                  </button>
+                </div>
+
+                {passwordError && <p className="uploadError">{passwordError}</p>}
+              </div>
+            </div>
+
+            <div className="avatarModalActions">
+              <button
+                type="button"
+                className="btnSecondary"
+                onClick={handleCancelPassword}
+                disabled={isSavingPassword}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btnYellow"
+                onClick={handleSavePassword}
+                disabled={isSavingPassword}
+              >
+                {isSavingPassword ? "Salvando..." : "Salvar senha"}
+                {isSavingPassword && (
                   <span className="btnSpinner" aria-hidden="true" />
                 )}
               </button>
