@@ -4,57 +4,78 @@ import os
 import requests
 
 logger = logging.getLogger(__name__)
-TEMP_ACCESS_TEMPLATE_ID = "vywj2lpy78ml7oqz"
 
-def _send_mailersend_template_email(to_email, subject, template_id, data):
-    api_key = os.getenv("MAILERSEND_API_KEY")
-    from_email = os.getenv("MAILERSEND_FROM_EMAIL")
 
-    if not api_key or not template_id or not from_email:
+def _parse_template_id(raw_template_id):
+    if raw_template_id is None:
+        return None
+    value = str(raw_template_id).strip()
+    if not value:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _send_brevo_template_email(to_email, subject, template_env_name, data):
+    api_key = os.getenv("BREVO_API_KEY")
+    from_email = os.getenv("BREVO_FROM_EMAIL")
+    from_name = os.getenv("BREVO_FROM_NAME", "GrenGame").strip()
+    api_base_url = os.getenv("BREVO_API_BASE_URL", "https://api.brevo.com/v3").strip().rstrip("/")
+    template_id = _parse_template_id(os.getenv(template_env_name))
+
+    if not api_key or not from_email or not template_id:
         logger.error(
-            "MAILERSEND_CONFIG_ERROR: missing MAILERSEND env vars "
-            "(api_key=%s template_id=%s from_email=%s)",
+            "BREVO_CONFIG_ERROR: missing/invalid BREVO env vars "
+            "(api_key=%s from_email=%s template_env=%s template_id=%s)",
             bool(api_key),
-            bool(template_id),
             bool(from_email),
+            template_env_name,
+            bool(template_id),
         )
         return False
 
     try:
         response = requests.post(
-            "https://api.mailersend.com/v1/email",
+            f"{api_base_url}/smtp/email",
             headers={
-                "Authorization": f"Bearer {api_key}",
+                "api-key": api_key,
                 "Content-Type": "application/json",
+                "Accept": "application/json",
             },
             json={
-                "from": {"email": from_email},
-                "to": [{"email": to_email}],
-                "subject": subject,
-                "template_id": template_id,
-                "personalization": [
+                "sender": {
+                    "email": from_email,
+                    "name": from_name,
+                },
+                "to": [
                     {
                         "email": to_email,
-                        "data": data,
                     }
                 ],
+                "subject": subject,
+                "templateId": template_id,
+                "params": data,
             },
             timeout=12,
         )
     except requests.RequestException:
         logger.exception(
-            "MAILERSEND_REQUEST_EXCEPTION: to=%s template_id=%s from=%s",
+            "BREVO_REQUEST_EXCEPTION: to=%s template_env=%s template_id=%s from=%s",
             to_email,
+            template_env_name,
             template_id,
             from_email,
         )
         return False
 
-    if response.status_code not in (200, 202):
+    if response.status_code not in (200, 201, 202):
         logger.error(
-            "MAILERSEND_SEND_FAILED: status=%s to=%s template_id=%s from=%s body=%s",
+            "BREVO_SEND_FAILED: status=%s to=%s template_env=%s template_id=%s from=%s body=%s",
             response.status_code,
             to_email,
+            template_env_name,
             template_id,
             from_email,
             response.text[:1000],
@@ -62,29 +83,29 @@ def _send_mailersend_template_email(to_email, subject, template_id, data):
         return False
 
     logger.info(
-        "MAILERSEND_SEND_ACCEPTED: status=%s to=%s template_id=%s",
+        "BREVO_SEND_ACCEPTED: status=%s to=%s template_env=%s template_id=%s",
         response.status_code,
         to_email,
+        template_env_name,
         template_id,
     )
     return True
 
 
 def send_password_reset_email(to_email, name, code):
-    template_id = os.getenv("MAILERSEND_TEMPLATE_ID")
-    return _send_mailersend_template_email(
+    return _send_brevo_template_email(
         to_email=to_email,
         subject="Codigo de recuperacao de senha - GrenGame",
-        template_id=template_id,
+        template_env_name="BREVO_PASSWORD_RESET_TEMPLATE_ID",
         data={"name": name, "code": code},
     )
 
 
 def send_temporary_access_email(to_email, name, password, expires_at):
-    return _send_mailersend_template_email(
+    return _send_brevo_template_email(
         to_email=to_email,
         subject="Acesso temporario ao GrenGame",
-        template_id=TEMP_ACCESS_TEMPLATE_ID,
+        template_env_name="BREVO_TEMP_ACCESS_TEMPLATE_ID",
         data={
             "name": name,
             "email": to_email,
