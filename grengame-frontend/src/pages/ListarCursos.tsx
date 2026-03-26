@@ -251,7 +251,15 @@ export default function ListarCursos() {
           params.set("limit", String(COURSES_PAGE_SIZE));
           return `${COURSES_ENDPOINT}?${params.toString()}`;
         })();
-        const response = await fetch(coursesUrl, { headers });
+        const coursesRequest = fetch(coursesUrl, { headers });
+        const progressRequest = token
+          ? fetch(PROGRESS_ENDPOINT, { headers })
+          : Promise.resolve<Response | null>(null);
+
+        const [response, progressResponse] = await Promise.all([
+          coursesRequest,
+          progressRequest,
+        ]);
 
         if (!response.ok) {
           throw new Error(`Falha ao carregar cursos (${response.status})`);
@@ -279,9 +287,8 @@ export default function ListarCursos() {
             updated_at?: string;
           }
         >();
-        if (token) {
+        if (progressResponse) {
           try {
-            const progressResponse = await fetch(PROGRESS_ENDPOINT, { headers });
             if (progressResponse.ok) {
               const progressData = await progressResponse.json();
               if (Array.isArray(progressData)) {

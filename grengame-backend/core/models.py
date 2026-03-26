@@ -93,6 +93,10 @@ class Game(models.Model):
         verbose_name_plural = "Games"
         ordering = ["-created_at"]
         db_table = "core_course"  # Mantém compatibilidade com tabela existente
+        indexes = [
+            models.Index(fields=["updated_at"], name="idx_course_updated_at"),
+            models.Index(fields=["created_by", "updated_at"], name="idx_course_owner_updated"),
+        ]
 
     def __str__(self):
         return self.name
@@ -208,6 +212,10 @@ class Mission(models.Model):
         verbose_name_plural = "Missões"
         ordering = ["game", "order", "-created_at"]
         unique_together = [['game', 'order']]  # Garante ordem única por curso
+        indexes = [
+            models.Index(fields=["game", "is_active"], name="idx_mission_game_active"),
+            models.Index(fields=["created_by", "updated_at"], name="idx_mission_owner_updated"),
+        ]
 
     def __str__(self):
         return f"{self.title} ({self.game.name})"
