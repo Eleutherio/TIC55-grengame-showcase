@@ -1,7 +1,6 @@
-
 .loginPage {
     font-family: Arial, sans-serif;
-    background-color: #4B40CB; /* Roxo principal */
+    background-color: #4b40cb;
     color: white;
     display: flex;
     justify-content: center;
@@ -10,9 +9,8 @@
     width: 100vw;
 }
 
-/* Container do formulário */
 .loginContainer {
-    background-color: #18217B; /* Roxo/azul escuro do card */
+    background-color: #18217b;
     padding: 40px;
     border-radius: 12px;
     box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
@@ -29,7 +27,6 @@
     margin-bottom: 25px;
 }
 
-/* Estilo dos campos de input */
 .inputGroup {
     margin-bottom: 15px;
 }
@@ -41,23 +38,19 @@
 }
 
 .inputGroup input {
-    width: 100%; /* Mantém 100% para preencher o container */
-    height: 37px; /* Conforme solicitado */
-    padding: 11px 13px; 
-
-    background-color: #FFFFFF; /* Cor branca solicitada */
-    color: #333; /* Cor do texto (para não ficar branco no branco) */
-
-    border-radius: 8px; /* Conforme solicitado */
-    border-width: 1px; /* Conforme solicitado */
-    border-style: solid; /* Adicionado para a borda aparecer */
-    border-color: #ccc; /* Cor de borda padrão (ajuste se necessário) */
-
-    box-sizing: border-box; /* MUITO importante para o width funcionar com padding */
+    width: 100%;
+    height: 37px;
+    padding: 11px 13px;
+    background-color: #ffffff;
+    color: #333;
+    border-radius: 8px;
+    border-width: 1px;
+    border-style: solid;
+    border-color: #ccc;
+    box-sizing: border-box;
     font-size: 1rem;
 }
 
-/* Grupo de botões */
 .buttonGroup {
     display: flex;
     justify-content: space-between;
@@ -76,14 +69,13 @@
     transition: background-color 0.2s ease, transform 0.08s ease, filter 0.2s ease, opacity 0.2s ease;
 }
 
-/* Botão "Entrar" (Amarelo) */
 .btnPrimary {
-    background-color: #FFC800;
+    background-color: #ffc800;
     color: #333;
 }
 
 .btnPrimary:hover {
-    background-color: #FFC800;
+    background-color: #ffc800;
 }
 
 .btnPrimary:active {
@@ -98,13 +90,12 @@
 }
 
 .btnPrimary:disabled {
-    cursor: progress;
+    cursor: not-allowed;
+    opacity: 0.88;
 }
 
-
-/* Link "Esqueci minha senha" */
 .forgotPassword {
-    color: #FFC800;
+    color: #ffc800;
     text-decoration: none;
     font-size: 0.9rem;
     text-align: center;
@@ -132,7 +123,7 @@
 }
 
 .tempAccessLink {
-    color: #FFC800;
+    color: #ffc800;
     text-decoration: none;
     font-weight: 700;
 }
@@ -141,22 +132,47 @@
     text-decoration: underline;
 }
 
-/* Mensagem de erro */
 .errorMessage {
-    color: #FFCDD2; /* Vermelho claro para erro */
+    color: #ffCDD2;
     font-size: 0.9rem;
     text-align: center;
-    margin-bottom: 15px;
-    min-height: 1.2em; /* Reserva espaço para a mensagem */
+    margin-bottom: 8px;
+    min-height: 1.2em;
 }
 
+.warmupMessage {
+    color: #d7defd;
+    font-size: 0.9rem;
+    text-align: center;
+    margin-bottom: 8px;
+    min-height: 1.2em;
+}
+
+.warmupMessage p {
+    margin: 0;
+}
+
+.warmupRetry {
+    margin-top: 8px;
+    border: 1px solid rgba(255, 200, 0, 0.6);
+    background: transparent;
+    color: #ffc800;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.82rem;
+    cursor: pointer;
+}
+
+.warmupRetry:hover {
+    background: rgba(255, 200, 0, 0.1);
+}
 
 .gLetter1 {
-    color: #FFC800; 
+    color: #ffc800;
 }
 
 .gLetter2 {
-    color: #fb2d2d; 
+    color: #fb2d2d;
 }
 
 .passwordWrapper {
@@ -178,6 +194,13 @@
     font-size: 1.05rem;
     line-height: 1;
     padding: 2px;
+}
+
+.passwordToggleIcon {
+    width: 18px;
+    height: 18px;
+    display: block;
+    object-fit: contain;
 }
 
 @media (max-width: 640px) {

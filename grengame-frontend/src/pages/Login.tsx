@@ -1,48 +1,99 @@
-﻿import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import styles from "./Login.module.css";
-import { useNavigate } from "react-router-dom";
 import { saveTokens } from "../utils/auth";
-import { Link } from "react-router-dom";
 import { API_CONFIG_ERROR, API_URL } from "../config/api";
 import { fetchWithTimeout } from "../utils/fetchWithTimeout";
 
+const WARMUP_TOTAL_MS = 60000;
+const WARMUP_ATTEMPT_TIMEOUT_MS = 8000;
+const WARMUP_RETRY_INTERVAL_MS = 3000;
+
 const Login = () => {
-  // --- ESTADO (State) ---
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState(""); // Estado para a mensagem de erro
+  const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isBackendReady, setIsBackendReady] = useState(false);
+  const [isWarmingUp, setIsWarmingUp] = useState(false);
+  const [warmupError, setWarmupError] = useState("");
 
   const navigate = useNavigate();
 
-  // --- MANIPULADOR DE ENVIO DO FORMULÁRIO ---
+  const warmupBackend = useCallback(async () => {
+    if (!API_URL) {
+      setIsBackendReady(false);
+      setIsWarmingUp(false);
+      setWarmupError("");
+      return;
+    }
+
+    setIsWarmingUp(true);
+    setIsBackendReady(false);
+    setWarmupError("");
+
+    const deadline = Date.now() + WARMUP_TOTAL_MS;
+
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetchWithTimeout(
+          `${API_URL}/health/`,
+          {
+            method: "GET",
+          },
+          WARMUP_ATTEMPT_TIMEOUT_MS,
+        );
+
+        if (response.ok) {
+          setIsBackendReady(true);
+          setIsWarmingUp(false);
+          setWarmupError("");
+          return;
+        }
+      } catch {
+        // Tenta novamente ate o tempo maximo.
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, WARMUP_RETRY_INTERVAL_MS));
+    }
+
+    setIsBackendReady(false);
+    setIsWarmingUp(false);
+    setWarmupError(
+      "Servidor ainda inicializando. Aguarde alguns segundos e tente novamente.",
+    );
+  }, []);
+
+  useEffect(() => {
+    void warmupBackend();
+  }, [warmupBackend]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     if (isSubmitting) return;
 
-    // 1. Impede o recarregamento da página
     event.preventDefault();
-
-    // 2. Limpa erros anteriores
     setError("");
 
-    // --- VALIDAÇÃO DE FRONT-END ---
-
-    // Validação 1: Campos em branco
-    if (email.trim() === "" || password.trim() === "") {
-      setError("Por favor, preencha todos os campos.");
-      return; // Para a execução
+    if (!isBackendReady) {
+      setError("Servidor inicializando. Aguarde o status ficar pronto para entrar.");
+      if (!isWarmingUp) {
+        void warmupBackend();
+      }
+      return;
     }
 
-    // Validação 2: Formato do e-mail
+    if (email.trim() === "" || password.trim() === "") {
+      setError("Por favor, preencha todos os campos.");
+      return;
+    }
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       setError("Por favor, insira um e-mail válido.");
-      return; // Para a execução
+      return;
     }
 
-    // Validação 3: Senha curta
     if (password.length < 6) {
       setError("A senha deve ter pelo menos 6 caracteres.");
       return;
@@ -53,16 +104,8 @@ const Login = () => {
       return;
     }
 
-    // --- FIM DA VALIDAÇÃO DE FRONT-END ---
-
-    // --- INÍCIO DA INTEGRAÇÃO COM BACK-END ---
-
     setIsSubmitting(true);
     try {
-      // 1. Envia os dados para o seu back-end Django
-      // --- MUDANÇA 1: URL CORRIGIDA ---
-      // O backend espera /auth/ (definido em grengame/urls.py)
-      // e /login/ (definido em core/urls.py)
       const response = await fetchWithTimeout(
         `${API_URL}/auth/login/`,
         {
@@ -77,11 +120,7 @@ const Login = () => {
 
       const data = await response.json();
 
-      // 3. Verifica se o back-end retornou um erro
       if (!response.ok) {
-        // --- MUDANÇA 2: DETECÇÃO DE ERRO MELHORADA ---
-        // Pega 'detail' (padrão do DRF) ou 'error' (da sua view customizada)
-        // DRF pode retornar erros de validação como objeto {campo: [erros]}
         let errorMessage = "Ocorreu um erro no login.";
 
         if (typeof data === "string") {
@@ -91,7 +130,6 @@ const Login = () => {
         } else if (data.error) {
           errorMessage = data.error;
         } else if (data.email || data.password) {
-          // Erros de validação de campo
           const emailError =
             Array.isArray(data.email) && data.email.length > 0
               ? data.email[0]
@@ -110,36 +148,26 @@ const Login = () => {
         }
 
         setError(errorMessage);
+      } else if (data.access) {
+        saveTokens(data.access, data.refresh || "");
+        navigate("/");
       } else {
-        // --- MUDANÇA 3: SALVAR OS TOKENS ---
-        // O login SÓ FUNCIONA se salvarmos o token
-        if (data.access) {
-          saveTokens(data.access, data.refresh || "");
-          navigate("/");
-        } else {
-          // Caso o backend retorne 200 OK mas não envie os tokens
-          setError("Resposta inválida do servidor. Token não encontrado.");
-        }
+        setError("Resposta inválida do servidor. Token não encontrado.");
       }
-    } catch (error) {
-      // 5. Erro de rede (back-end desligado, etc.)
-      if (error instanceof DOMException && error.name === "AbortError") {
-        setError(
-          "Servidor demorou para responder. Tente novamente em alguns segundos.",
-        );
+    } catch (requestError) {
+      if (requestError instanceof DOMException && requestError.name === "AbortError") {
+        setError("Servidor demorou para responder. Tente novamente em alguns segundos.");
         return;
       }
       setError("Não foi possível conectar ao servidor. Tente novamente.");
     } finally {
       setIsSubmitting(false);
     }
-    // --- FIM DA INTEGRAÇÃO COM BACK-END ---
   };
 
   return (
     <div className={styles.loginPage}>
       <div className={styles.loginContainer}>
-        {/* O logo "GrenGame" */}
         <h1 className={styles.title}>
           <span className={styles.gLetter1}>G</span>
           ren
@@ -154,8 +182,8 @@ const Login = () => {
               type="email"
               id="email"
               placeholder="nome.sobrenome@gmail.com"
-              value={email} // O valor do input é controlado pelo 'state'
-              onChange={(e) => setEmail(e.target.value)} // Atualiza o 'state' ao digitar
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
             />
           </div>
 
@@ -166,8 +194,8 @@ const Login = () => {
                 type={showPassword ? "text" : "password"}
                 id="password"
                 placeholder="********"
-                value={password} // O valor do input é controlado pelo 'state'
-                onChange={(e) => setPassword(e.target.value)} // Atualiza o 'state' ao digitar
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
               />
               <button
                 type="button"
@@ -176,22 +204,44 @@ const Login = () => {
                 aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                 aria-pressed={showPassword}
               >
-                {showPassword ? "🙈" : "👁"}
+                <img
+                  src={showPassword ? "/eye-closed.png" : "/eye-open.png"}
+                  alt=""
+                  aria-hidden="true"
+                  className={styles.passwordToggleIcon}
+                />
               </button>
             </div>
           </div>
 
-          {/* Área para exibir mensagens de erro */}
-          {/* Este 'div' só aparece se 'error' não estiver vazio */}
           <div className={styles.errorMessage}>{error && <p>{error}</p>}</div>
+
+          <div className={styles.warmupMessage}>
+            {warmupError && <p>{warmupError}</p>}
+            {!isBackendReady && !isWarmingUp && (
+              <button
+                type="button"
+                className={styles.warmupRetry}
+                onClick={() => void warmupBackend()}
+              >
+                Tentar conectar novamente
+              </button>
+            )}
+          </div>
 
           <div className={styles.buttonGroup}>
             <button
               type="submit"
               className={`${styles.btnPrimary} ${isSubmitting ? styles.btnPrimaryLoading : ""}`}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isBackendReady}
             >
-              {isSubmitting ? "Entrando..." : "Entrar"}
+              {isSubmitting
+                ? "Entrando..."
+                : isWarmingUp
+                  ? "Inicializando servidor... (até 60s)"
+                  : !isBackendReady
+                    ? "Aguardando servidor"
+                    : "Entrar"}
             </button>
           </div>
 
