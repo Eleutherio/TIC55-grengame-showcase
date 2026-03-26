@@ -161,7 +161,12 @@ export default function AdicionarUsuarioModal({
               aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
               aria-pressed={mostrarSenha}
             >
-              {mostrarSenha ? "🙈" : "👁"}
+              <img
+                src={mostrarSenha ? "/eye-closed.png" : "/eye-open.png"}
+                alt=""
+                aria-hidden="true"
+                className="h-4 w-4 object-contain"
+              />
             </button>
           </div>
 

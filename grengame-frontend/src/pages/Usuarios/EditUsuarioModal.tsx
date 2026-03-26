@@ -90,7 +90,9 @@ export default function EditUsuarioModal({
       onClose();
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Não foi possível atualizar o usuário. Tente novamente.";
+        error instanceof Error
+          ? error.message
+          : "Não foi possível atualizar o usuário. Tente novamente.";
       setErro(message);
     } finally {
       setIsSalvando(false);
@@ -150,7 +152,9 @@ export default function EditUsuarioModal({
             <option value="user">Usuário</option>
             <option value="admin">Administrador</option>
           </select>
-          {isRoleLocked && <p className="text-xs text-gray-500">Não é possível alterar o próprio perfil de acesso.</p>}
+          {isRoleLocked && (
+            <p className="text-xs text-gray-500">Não é possível alterar o próprio perfil de acesso.</p>
+          )}
 
           <label className="block text-sm font-medium text-gray-700" htmlFor="edit-senha">
             Nova senha (opcional)
@@ -171,7 +175,12 @@ export default function EditUsuarioModal({
               aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
               aria-pressed={mostrarSenha}
             >
-              {mostrarSenha ? "🙈" : "👁"}
+              <img
+                src={mostrarSenha ? "/eye-closed.png" : "/eye-open.png"}
+                alt=""
+                aria-hidden="true"
+                className="h-4 w-4 object-contain"
+              />
             </button>
           </div>
 

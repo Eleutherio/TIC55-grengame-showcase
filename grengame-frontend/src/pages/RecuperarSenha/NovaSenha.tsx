@@ -1,14 +1,18 @@
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import "./NovaSenha.css";
 import { API_CONFIG_ERROR, API_URL } from "../../config/api";
 import { fetchWithTimeout } from "../../utils/fetchWithTimeout";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+
 export default function NovaSenha() {
   const location = useLocation();
   const navigate = useNavigate();
-  const email = location.state?.email || "";
 
+  const queryEmail = new URLSearchParams(location.search).get("email") || "";
+  const stateEmail = typeof location.state?.email === "string" ? location.state.email : "";
+  const [email, setEmail] = useState((stateEmail || queryEmail).trim().toLowerCase());
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -21,10 +25,10 @@ export default function NovaSenha() {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
-    if (!email) {
-      navigate("/recuperar-senha");
+    if (!email && (stateEmail || queryEmail)) {
+      setEmail((stateEmail || queryEmail).trim().toLowerCase());
     }
-  }, [email, navigate]);
+  }, [email, queryEmail, stateEmail]);
 
   const handleOtpChange = (index: number, value: string) => {
     if (!/^\d*$/.test(value)) return;
@@ -36,12 +40,16 @@ export default function NovaSenha() {
     }
   };
 
-  const handlePaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const pastedData = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+  const handlePaste = (event: React.ClipboardEvent) => {
+    event.preventDefault();
+    const pastedData = event.clipboardData
+      .getData("text")
+      .replace(/\D/g, "")
+      .slice(0, 6);
+
     if (pastedData.length > 0) {
       const newOtp = [...otp];
-      for (let i = 0; i < pastedData.length && i < 6; i++) {
+      for (let i = 0; i < pastedData.length && i < 6; i += 1) {
         newOtp[i] = pastedData[i];
       }
       setOtp(newOtp);
@@ -50,13 +58,25 @@ export default function NovaSenha() {
     }
   };
 
-  const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === "Backspace" && !otp[index] && index > 0) {
+  const handleKeyDown = (index: number, event: React.KeyboardEvent) => {
+    if (event.key === "Backspace" && !otp[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
   };
 
+  const validateEmail = () => {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !EMAIL_REGEX.test(trimmedEmail)) {
+      setError("Informe um e-mail válido para continuar.");
+      return null;
+    }
+    return trimmedEmail;
+  };
+
   const handleSubmit = async () => {
+    const normalizedEmail = validateEmail();
+    if (!normalizedEmail) return;
+
     const code = otp.join("");
     if (code.length !== 6) {
       setError("Digite o código completo.");
@@ -86,13 +106,12 @@ export default function NovaSenha() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ email, code }),
+          body: JSON.stringify({ email: normalizedEmail, code }),
         },
         15000,
       );
 
       const verifyData = await verifyResponse.json();
-
       if (!verifyResponse.ok) {
         setError(verifyData.error || "Código inválido.");
         return;
@@ -114,7 +133,6 @@ export default function NovaSenha() {
       );
 
       const confirmData = await confirmResponse.json();
-
       if (!confirmResponse.ok) {
         setError(confirmData.error || "Erro ao redefinir senha.");
         return;
@@ -122,8 +140,8 @@ export default function NovaSenha() {
 
       setSuccess("Senha alterada com sucesso!");
       setTimeout(() => navigate("/login"), 2000);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
+    } catch (requestError) {
+      if (requestError instanceof DOMException && requestError.name === "AbortError") {
         setError("Servidor demorou para responder. Tente novamente em alguns segundos.");
       } else {
         setError("Erro de conexão.");
@@ -134,6 +152,9 @@ export default function NovaSenha() {
   };
 
   const handleResend = async () => {
+    const normalizedEmail = validateEmail();
+    if (!normalizedEmail) return;
+
     setLoading(true);
     setError("");
     try {
@@ -147,10 +168,11 @@ export default function NovaSenha() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({ email: normalizedEmail }),
         },
         15000,
       );
+
       if (response.ok) {
         setSuccess("Código reenviado!");
         setTimeout(() => setSuccess(""), 3000);
@@ -170,22 +192,37 @@ export default function NovaSenha() {
           <span className="gLetter2">G</span>ame
         </h1>
 
-        <p className="description">Informe o código de 6 dígitos enviado para seu e-mail e crie uma nova senha</p>
+        <p className="description">
+          Informe o e-mail cadastrado, o código de 6 dígitos recebido e crie uma nova senha.
+        </p>
+
+        <label className="inputLabel" htmlFor="reset-email">
+          E-mail cadastrado
+        </label>
+        <input
+          id="reset-email"
+          type="email"
+          className="passwordInput"
+          placeholder="nome.sobrenome@gmail.com"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          autoComplete="email"
+        />
 
         <label className="inputLabel">Código de Verificação</label>
         <div className="otpContainer">
           {otp.map((digit, index) => (
             <input
               key={index}
-              ref={(el) => {
-                inputRefs.current[index] = el;
+              ref={(element) => {
+                inputRefs.current[index] = element;
               }}
               className="otpBox"
               type="text"
               maxLength={1}
               value={digit}
-              onChange={(e) => handleOtpChange(index, e.target.value)}
-              onKeyDown={(e) => handleKeyDown(index, e)}
+              onChange={(event) => handleOtpChange(index, event.target.value)}
+              onKeyDown={(event) => handleKeyDown(index, event)}
               onPaste={handlePaste}
             />
           ))}
@@ -204,7 +241,7 @@ export default function NovaSenha() {
             className="passwordInput"
             placeholder="........"
             value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
+            onChange={(event) => setNewPassword(event.target.value)}
           />
           <button
             type="button"
@@ -213,7 +250,12 @@ export default function NovaSenha() {
             aria-label={showNewPassword ? "Ocultar senha" : "Mostrar senha"}
             aria-pressed={showNewPassword}
           >
-            {showNewPassword ? "🙈" : "👁"}
+            <img
+              src={showNewPassword ? "/eye-closed.png" : "/eye-open.png"}
+              alt=""
+              aria-hidden="true"
+              className="passwordToggleIcon"
+            />
           </button>
         </div>
         <span className="helperText">Mínimo de 8 caracteres</span>
@@ -225,7 +267,7 @@ export default function NovaSenha() {
             className="passwordInput"
             placeholder="........"
             value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
+            onChange={(event) => setConfirmPassword(event.target.value)}
           />
           <button
             type="button"
@@ -234,7 +276,12 @@ export default function NovaSenha() {
             aria-label={showConfirmPassword ? "Ocultar senha" : "Mostrar senha"}
             aria-pressed={showConfirmPassword}
           >
-            {showConfirmPassword ? "🙈" : "👁"}
+            <img
+              src={showConfirmPassword ? "/eye-closed.png" : "/eye-open.png"}
+              alt=""
+              aria-hidden="true"
+              className="passwordToggleIcon"
+            />
           </button>
         </div>
 
