@@ -140,6 +140,13 @@
     padding: 2px;
 }
 
+.passwordToggleIcon {
+    width: 18px;
+    height: 18px;
+    display: block;
+    object-fit: contain;
+}
+
 .helperText {
     display: block;
     width: 100%;
