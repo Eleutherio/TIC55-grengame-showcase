@@ -54,6 +54,11 @@ try:
 except ValueError:
     TEMPORARY_FIRST_LOGIN_WINDOW_MINUTES = 30
 
+TEMP_ACCESS_LOGIN_URL = os.getenv(
+    "TEMP_ACCESS_LOGIN_URL",
+    "https://tic55-grengame-showcase.pages.dev/login",
+).strip()
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "").strip()
 SUPABASE_S3_ENDPOINT = os.getenv("SUPABASE_S3_ENDPOINT", "").strip().rstrip("/")
