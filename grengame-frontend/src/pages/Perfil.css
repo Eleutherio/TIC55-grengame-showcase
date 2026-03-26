@@ -783,6 +783,34 @@
   box-shadow: 0 0 0 3px rgba(255, 200, 0, 0.25);
 }
 
+.passwordFieldWrapper {
+  position: relative;
+}
+
+.passwordFieldInput {
+  padding-right: 42px;
+}
+
+.passwordToggleButton {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.passwordToggleIcon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
 .successMessage {
   color: #0f9d58;
   font-size: 13px;

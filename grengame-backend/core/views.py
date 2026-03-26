@@ -226,6 +226,42 @@ class UserUpdateView(APIView):
         serializer.is_valid(raise_exception=True)
         
         user = request.user
+
+        current_password = serializer.validated_data.get("current_password")
+        new_password = serializer.validated_data.get("new_password")
+        confirm_password = serializer.validated_data.get("confirm_password")
+        has_password_payload = any(
+            value is not None
+            for value in (current_password, new_password, confirm_password)
+        )
+
+        if has_password_payload:
+            if not current_password or not new_password or not confirm_password:
+                return Response(
+                    {
+                        "error": (
+                            "Preencha senha atual, nova senha e "
+                            "confirmação para alterar a senha."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not user.check_password(current_password):
+                return Response(
+                    {"error": "Senha atual incorreta."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if new_password != confirm_password:
+                return Response(
+                    {"error": "Nova senha e confirmação não coincidem."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if len(new_password) < 8:
+                return Response(
+                    {"error": "A nova senha deve ter no mínimo 8 caracteres."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            user.set_password(new_password)
         
         if 'first_name' in serializer.validated_data:
             user.first_name = serializer.validated_data['first_name']
