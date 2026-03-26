@@ -137,6 +137,35 @@ body {
   padding-bottom: 0;
 }
 
+.missions-status-card {
+  width: min(720px, 92%);
+  margin: 20px auto;
+  padding: 20px 22px;
+  border-radius: 16px;
+  border: 1px solid #ffd24d;
+  background: linear-gradient(135deg, rgba(24, 33, 123, 0.96), rgba(44, 55, 168, 0.95));
+  box-shadow:
+    0 16px 28px rgba(24, 33, 123, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  text-align: center;
+}
+
+.missions-status-title {
+  margin: 0 0 8px;
+  color: #ffc800;
+  font-size: 20px;
+  line-height: 1.35;
+  font-weight: 800;
+}
+
+.missions-status-subtitle {
+  margin: 0;
+  color: #f4f6ff;
+  font-size: 14px;
+  line-height: 1.55;
+  font-weight: 500;
+}
+
 /* Wrapper do "canvas" da trilha (centralizado) */
 .trilha-stage-wrap {
   position: relative;
