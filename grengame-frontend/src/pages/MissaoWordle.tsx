@@ -109,6 +109,15 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (gameWon || attempts.length >= maxAttempts) return;
+      const activeElement = document.activeElement as HTMLElement | null;
+      const isTypingElement =
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement instanceof HTMLSelectElement ||
+        Boolean(activeElement?.isContentEditable);
+
+      // Evita duplicar entrada quando o teclado móvel está ativo no input oculto.
+      if (isTypingElement) return;
 
       const key = e.key.toUpperCase();
 
@@ -123,7 +132,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
 
     window.addEventListener("keydown", handleKeyPress);
     return () => window.removeEventListener("keydown", handleKeyPress);
-  }, [currentAttempt, gameWon, attempts]);
+  }, [currentAttempt, gameWon, attempts, maxAttempts, wordLength]);
 
   useEffect(() => {
     const handleResize = () => setViewportWidth(window.innerWidth);
@@ -308,6 +317,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
           if (response.ok) {
             const data = await response.json();
             setEarnedPoints(data.points_earned || 0);
+            notifyUserDataUpdated();
           } else {
             console.error("Erro ao validar wordle");
           }
@@ -472,7 +482,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
           marginBottom: "8px",
         }}>
           <div style={{
-            width: gameWon ? "100%" : "80%",
+            width: gameWon || isCompleted ? "100%" : "80%",
             height: "100%",
             backgroundColor: "#FFC107",
             transition: "width 0.5s ease",

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "../config/api";
+import { notifyUserDataUpdated } from "../utils/auth";
 
 type Question = {
   question: string;
@@ -42,6 +43,12 @@ export default function MissaoQuiz({ mission, onComplete: _onComplete, isComplet
   const currentQuestion = questions[currentQuestionIndex];
   const isLastMission = totalMissions > 0 && mission.order >= totalMissions;
 
+  useEffect(() => {
+    if (isCompleted) {
+      setHasAnswered(true);
+    }
+  }, [isCompleted]);
+
   const handleSubmit = async () => {
     if (selectedOption === null || isSubmitting) return;
 
@@ -74,6 +81,7 @@ export default function MissaoQuiz({ mission, onComplete: _onComplete, isComplet
             .then(response => response.ok ? response.json() : Promise.reject())
             .then(data => {
               setEarnedPoints(data.points_earned || 0);
+              notifyUserDataUpdated();
             })
             .catch(error => {
               console.error("Erro ao validar quiz:", error);
