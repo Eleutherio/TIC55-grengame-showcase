@@ -81,19 +81,19 @@ const CRITERIA_OPTIONS: Array<{
     id: "course_points",
     label: "Conquistador do Curso (pontos)",
     description:
-      "Desbloqueia por percentual dos pontos totais do game acumulados pelo usuario.",
+      "Desbloqueia por percentual dos pontos totais do game acumulados pelo usuário.",
   },
   {
     id: "perfect_missions",
-    label: "Perfeccionista (missoes perfeitas)",
+    label: "Perfeccionista (missões perfeitas)",
     description:
-      "Desbloqueia por percentual de missoes concluidas com pontuacao maxima.",
+      "Desbloqueia por percentual de missões concluídas com pontuação máxima.",
   },
   {
     id: "active_days",
     label: "Ritmo Constante (dias ativos)",
     description:
-      "Desbloqueia por quantidade de dias diferentes com missoes concluidas no game.",
+      "Desbloqueia por quantidade de dias diferentes com missões concluídas no game.",
   },
 ];
 
@@ -101,21 +101,21 @@ const GAMIFIED_TITLES: Record<UnlockCriterion, Record<TierNumber, string>> = {
   course_points: {
     1: "Explorador de Pontos",
     2: "Rumo ao Topo",
-    3: "Dominio da Trilha",
+    3: "Domínio da Trilha",
     4: "Mestre da Jornada",
     5: "Conquistador do Curso",
   },
   perfect_missions: {
     1: "Acerto Afinado",
-    2: "Olho Clinico",
-    3: "Execucao Precisa",
+    2: "Olho Clínico",
+    3: "Execução Precisa",
     4: "Mestre Perfeccionista",
     5: "Perfeccionista Supremo",
   },
   active_days: {
-    1: "Presenca em Campo",
+    1: "Presença em Campo",
     2: "Ritmo de Treino",
-    3: "Constancia Tatica",
+    3: "Constância Tática",
     4: "Compromisso de Elite",
     5: "Ritmo Constante",
   },
@@ -175,7 +175,7 @@ const publicationStatusLabel = (isActive: boolean) =>
   isActive ? "Publicado" : "Rascunho";
 
 const criterionHelp = (criterion: CriterionValue) => {
-  if (!criterion) return "Selecione um criterio para ver como o desbloqueio sera contado.";
+  if (!criterion) return "Selecione um critério para ver como o desbloqueio será contado.";
   return CRITERIA_OPTIONS.find((option) => option.id === criterion)?.description ?? "";
 };
 
@@ -200,12 +200,12 @@ const criterionPresetHelp = (criterion: CriterionValue, valueMode: ValueMode) =>
   if (criterion === "course_points") {
     return valueMode === "percentage"
       ? "Preset MVP: 25, 45, 65, 85 e 100 (%)."
-      : "Configuracao legada em valor absoluto. Para salvar, use percentual (0 a 100).";
+      : "Configuração legada em valor absoluto. Para salvar, use percentual (0 a 100).";
   }
   if (criterion === "perfect_missions") {
     return valueMode === "percentage"
       ? "Preset MVP: 20, 40, 60, 80 e 100 (%)."
-      : "Configuracao legada em valor absoluto. Para salvar, use percentual (0 a 100).";
+      : "Configuração legada em valor absoluto. Para salvar, use percentual (0 a 100).";
   }
   if (criterion === "active_days") return "Preset MVP: 2, 3, 4, 5 e 7 dias.";
   return "";
@@ -236,10 +236,10 @@ const ruleDescription = (
   }
   if (criterion === "perfect_missions") {
     return valueMode === "percentage"
-      ? `Concluir ${value}% das missoes com pontuacao maxima`
-      : `Concluir ${value} missao(oes) com pontuacao maxima (legado absoluto)`;
+      ? `Concluir ${value}% das missões com pontuação máxima`
+      : `Concluir ${value} missão(ões) com pontuação máxima (legado absoluto)`;
   }
-  if (criterion === "active_days") return `Concluir missoes em ${value} dia(s) diferentes`;
+  if (criterion === "active_days") return `Concluir missões em ${value} dia(s) diferentes`;
   return `Meta: ${value}`;
 };
 
@@ -506,7 +506,7 @@ export default function AdministrarBadges() {
 
   const validationError = useMemo(() => {
     if (!selectedGameId) return "Selecione um game para configurar a badge.";
-    if (!selectedCriterion) return "Selecione um criterio de desbloqueio.";
+    if (!selectedCriterion) return "Selecione um critério de desbloqueio.";
 
     const isPercentage = isPercentageCriterion(selectedCriterion);
     let previous = isPercentage ? -1 : 0;
@@ -517,7 +517,7 @@ export default function AdministrarBadges() {
       }
       if (isPercentage) {
         if (value < 0 || value > 100) {
-          return `Tier ${asset.tier}: para criterios percentuais, use valor entre 0 e 100.`;
+          return `Tier ${asset.tier}: para critérios percentuais, use valor entre 0 e 100.`;
         }
       } else if (value <= 0) {
         return `Tier ${asset.tier}: informe um numero inteiro maior que zero.`;
@@ -529,7 +529,7 @@ export default function AdministrarBadges() {
     }
 
     if (isPercentageCriterion(selectedCriterion) && tierValues[5] !== 100) {
-      return "Para criterios percentuais, o Tier 5 deve ser 100.";
+      return "Para critérios percentuais, o Tier 5 deve ser 100.";
     }
 
     return "";
@@ -576,12 +576,12 @@ export default function AdministrarBadges() {
 
         setGames(normalizedGames);
         setGamesError(
-          normalizedGames.length === 0 ? "Nenhum game disponivel no momento." : null,
+          normalizedGames.length === 0 ? "Nenhum game disponível no momento." : null,
         );
       } catch {
         if (!active) return;
         setGames([]);
-        setGamesError("Nao foi possivel carregar os games.");
+        setGamesError("Não foi possível carregar os games.");
       } finally {
         if (active) setIsLoadingGames(false);
       }
@@ -650,7 +650,7 @@ export default function AdministrarBadges() {
       if (result.kind === "error") {
         setStatusFeedback({
           type: "info",
-          text: "Nao foi possivel carregar configuracao previa para este criterio.",
+          text: "Não foi possível carregar configuração prévia para este critério.",
         });
         setSelectedIsActive(false);
         setIsLoadingConfig(false);
@@ -701,7 +701,7 @@ export default function AdministrarBadges() {
         setIsBackendUnavailable(true);
         setSavedConfigs([]);
         setSavedConfigsError(
-          "Endpoint de badges indisponivel no backend para listar configuracoes.",
+          "Endpoint de badges indisponível no backend para listar configurações.",
         );
         setIsLoadingSavedConfigs(false);
         return;
@@ -722,13 +722,13 @@ export default function AdministrarBadges() {
 
       if (results.some((result) => result.kind === "error")) {
         setSavedConfigsError(
-          "Algumas configuracoes nao puderam ser carregadas. Tente atualizar a lista.",
+          "Algumas configurações não puderam ser carregadas. Tente atualizar a lista.",
         );
       }
     } catch {
       setSavedConfigs([]);
       setSavedGamesPagination({ ...EMPTY_GAMES_PAGINATION });
-      setSavedConfigsError("Nao foi possivel carregar as badges salvas.");
+      setSavedConfigsError("Não foi possível carregar as badges salvas.");
     } finally {
       setIsLoadingSavedConfigs(false);
     }
@@ -796,7 +796,7 @@ export default function AdministrarBadges() {
     if (isBackendUnavailable) {
       setStatusFeedback({
         type: "error",
-        text: "O backend atual ainda nao possui endpoint para salvar configuracao de badges.",
+        text: "O backend atual ainda não possui endpoint para salvar configuração de badges.",
       });
       return;
     }
@@ -832,7 +832,7 @@ export default function AdministrarBadges() {
         setIsBackendUnavailable(true);
         setStatusFeedback({
           type: "error",
-          text: "Nao foi possivel salvar. Endpoint de badges indisponivel no backend.",
+          text: "Não foi possível salvar. Endpoint de badges indisponível no backend.",
         });
         return;
       }
@@ -843,20 +843,20 @@ export default function AdministrarBadges() {
           type: "error",
           text:
             getErrorMessage(payloadError) ||
-            `Nao foi possivel salvar a configuracao (${response.status}).`,
+            `Não foi possível salvar a configuração (${response.status}).`,
         });
         return;
       }
 
       setStatusFeedback({
         type: "success",
-        text: `Configuracao ${criterionLabel(selectedCriterion)} salva como ${publicationStatusLabel(selectedIsActive).toLowerCase()}.`,
+        text: `Configuração ${criterionLabel(selectedCriterion)} salva como ${publicationStatusLabel(selectedIsActive).toLowerCase()}.`,
       });
       await fetchSavedConfigs();
     } catch {
       setStatusFeedback({
         type: "error",
-        text: "Erro de conexao ao salvar. Tente novamente.",
+        text: "Erro de conexão ao salvar. Tente novamente.",
       });
     } finally {
       setIsSaving(false);
@@ -871,7 +871,7 @@ export default function AdministrarBadges() {
     setTierValues({ ...config.tierValues });
     setStatusFeedback({
       type: "info",
-      text: `Configuracao ${criterionLabel(config.criterion)} do game ${config.gameName} carregada para edicao.`,
+      text: `Configuração ${criterionLabel(config.criterion)} do game ${config.gameName} carregada para edição.`,
     });
   };
 
@@ -895,7 +895,7 @@ export default function AdministrarBadges() {
         setIsBackendUnavailable(true);
         setStatusFeedback({
           type: "error",
-          text: "Nao foi possivel excluir. Endpoint de badges indisponivel no backend.",
+          text: "Não foi possível excluir. Endpoint de badges indisponível no backend.",
         });
         return;
       }
@@ -906,7 +906,7 @@ export default function AdministrarBadges() {
           type: "error",
           text:
             getErrorMessage(payloadError) ||
-            `Nao foi possivel excluir a configuracao (${response.status}).`,
+            `Não foi possível excluir a configuração (${response.status}).`,
         });
         return;
       }
@@ -919,13 +919,13 @@ export default function AdministrarBadges() {
 
       setStatusFeedback({
         type: "success",
-        text: `Configuracao ${criterionLabel(config.criterion)} excluida com sucesso.`,
+        text: `Configuração ${criterionLabel(config.criterion)} excluída com sucesso.`,
       });
       await fetchSavedConfigs();
     } catch {
       setStatusFeedback({
         type: "error",
-        text: "Erro de conexao ao excluir a configuracao.",
+        text: "Erro de conexão ao excluir a configuração.",
       });
     } finally {
       setIsDeletingConfigKey(null);
@@ -940,7 +940,7 @@ export default function AdministrarBadges() {
     selectedCriterion &&
     isPercentageCriterion(selectedCriterion) &&
     selectedValueMode === "absolute"
-      ? "Configuracao legada detectada. Para salvar, converta os tiers para percentual (0 a 100) e mantenha o Tier 5 em 100."
+      ? "Configuração legada detectada. Para salvar, converta os tiers para percentual (0 a 100) e mantenha o Tier 5 em 100."
       : "";
 
   const isSaveDisabled =
@@ -957,8 +957,8 @@ export default function AdministrarBadges() {
           <div>
             <h1>Configurar Badges</h1>
             <p>
-              Defina o criterio por game e ajuste os 5 tiers de desbloqueio do
-              MVP (pontos, missoes perfeitas ou dias ativos).
+              Defina o critério por game e ajuste os 5 tiers de desbloqueio do
+              MVP (pontos, missões perfeitas ou dias ativos).
             </p>
           </div>
 
@@ -986,7 +986,7 @@ export default function AdministrarBadges() {
               criteriaOptions={CRITERIA_OPTIONS}
               criterionHelpText={
                 !selectedGameId
-                  ? "Escolha o game para habilitar os criterios."
+                  ? "Escolha o game para habilitar os critérios."
                   : criterionHelp(selectedCriterion)
               }
               onGameChange={handleGameChange}
@@ -1051,7 +1051,7 @@ export default function AdministrarBadges() {
             onClick={handleSave}
             disabled={isSaveDisabled}
           >
-            {isSaving ? "Salvando..." : "Salvar configuracao"}
+            {isSaving ? "Salvando..." : "Salvar configuração"}
           </button>
         </footer>
 
