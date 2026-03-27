@@ -1997,8 +1997,6 @@ class IsAdminRole(BasePermission):
     def has_permission(self, request, view):
         if request.user.is_superuser:
             return True
-        if is_temporary_admin(request.user):
-            return False
         return request.user.is_authenticated and getattr(request.user, "role", None) == "admin"
 
 
