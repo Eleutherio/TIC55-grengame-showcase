@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "../../config/api";
+import { USER_DATA_UPDATED_EVENT } from "../../utils/auth";
 
 import "./MenuBadgesTilhas.css";
 
@@ -286,6 +287,7 @@ export default function MenuBadgesTilhas({
           `${API_URL}/gamification/badges/available/?game_id=${encodeURIComponent(gameId)}`,
           {
             signal,
+            cache: "no-store",
             headers: {
               Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
@@ -343,6 +345,27 @@ export default function MenuBadgesTilhas({
     const controller = new AbortController();
     void loadChallenges(controller.signal);
     return () => controller.abort();
+  }, [loadChallenges]);
+  useEffect(() => {
+    const refreshChallenges = () => {
+      void loadChallenges();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshChallenges();
+      }
+    };
+
+    window.addEventListener(USER_DATA_UPDATED_EVENT, refreshChallenges);
+    window.addEventListener("focus", refreshChallenges);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener(USER_DATA_UPDATED_EVENT, refreshChallenges);
+      window.removeEventListener("focus", refreshChallenges);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [loadChallenges]);
 
   useEffect(() => {
@@ -439,7 +462,7 @@ export default function MenuBadgesTilhas({
     const canOpenDrawer = hasConfiguredChallenges || Boolean(error);
     if (!canOpenDrawer) return;
     setIsOpen(true);
-    if (error) void loadChallenges();
+    void loadChallenges();
   };
 
   const hasCompletedAllChallenges = hasConfiguredChallenges && !hasAvailableChallenges;
@@ -683,3 +706,5 @@ export default function MenuBadgesTilhas({
     </>
   );
 }
+
+
