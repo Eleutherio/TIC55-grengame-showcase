@@ -223,7 +223,9 @@ describe("AdministrarBadges", () => {
     render(<AdministrarBadges />);
 
     await waitFor(() => {
-      expect(screen.getByText(/erro-games:Nao foi possivel carregar os games\./i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/erro-games:Não foi possível carregar os games\./i),
+      ).toBeInTheDocument();
     });
   });
 });

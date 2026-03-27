@@ -42,7 +42,7 @@ type CoursesResponse = {
 };
 
 import { API_URL as API_BASE } from "../config/api";
-const COURSES_ENDPOINT = `${API_BASE}/auth/cursos/`;
+const COURSES_ENDPOINT = `${API_BASE}/auth/games/`;
 const PROGRESS_ENDPOINT = `${API_BASE}/auth/progress/list/`;
 const LAST_PLAYED_KEY = "lastPlayedCourseId";
 const LAST_PLAYED_COURSE_KEY = "lastPlayedCourseData";
@@ -180,7 +180,7 @@ const createFetchMock = (config: FetchMockConfig = {}) => {
       !isCoursesListUrl(urlStr) &&
       !urlStr.endsWith("/ranking/")
     ) {
-      const detailMatch = urlStr.match(/\/auth\/cursos\/(\d+)\/$/);
+      const detailMatch = urlStr.match(/\/auth\/games\/(\d+)\/$/);
       if (detailMatch) {
         const courseId = Number(detailMatch[1]);
         const response = courseById[courseId] ?? {
@@ -210,11 +210,11 @@ const createFetchMock = (config: FetchMockConfig = {}) => {
     }
 
     if (
-      urlStr.startsWith(`${API_BASE}/auth/cursos/`) &&
+      urlStr.startsWith(`${API_BASE}/auth/games/`) &&
       urlStr.endsWith("/ranking/") &&
       method === "GET"
     ) {
-      const match = urlStr.match(/\/auth\/cursos\/(\d+)\/ranking\/$/);
+      const match = urlStr.match(/\/auth\/games\/(\d+)\/ranking\/$/);
       const courseId = match ? Number(match[1]) : NaN;
       const response = leaderboardByCourseId[courseId] ?? { ok: true, data: [] };
       return makeResponse(
@@ -263,7 +263,7 @@ describe("ListarCursos page", () => {
         return deferred.promise;
       }
       if (
-        String(url).startsWith(`${API_BASE}/auth/cursos/`) &&
+        String(url).startsWith(`${API_BASE}/auth/games/`) &&
         String(url).endsWith("/ranking/")
       ) {
         return makeResponse([]);
@@ -777,7 +777,7 @@ describe("ListarCursos page", () => {
         return makeResponse(mockCourses);
       }
       if (
-        urlStr.startsWith(`${API_BASE}/auth/cursos/`) &&
+        urlStr.startsWith(`${API_BASE}/auth/games/`) &&
         urlStr.endsWith("/ranking/")
       ) {
         return leaderboardDeferred.promise;
@@ -794,7 +794,7 @@ describe("ListarCursos page", () => {
     leaderboardDeferred.resolve(makeResponse([]));
 
     expect(
-      await screen.findByText(/Escolha um game na lista/i)
+      await screen.findByText(/Nenhum jogador no ranking deste game ainda/i)
     ).toBeInTheDocument();
   });
 
@@ -999,7 +999,7 @@ describe("ListarCursos page", () => {
     expect(screen.queryByText("Você")).not.toBeInTheDocument();
   });
 
-  it("mostra link de progresso quando usuário está no leaderboard e inscrito", async () => {
+  it("mostra destaque do usuário no leaderboard quando está inscrito", async () => {
     localStorage.setItem("accessToken", makeToken({ user_id: 999 }));
 
     const enrolledCourses = mockCourses.map((course) =>
@@ -1016,10 +1016,11 @@ describe("ListarCursos page", () => {
     renderListarCursos();
 
     expect(
-      await screen.findByRole("link", { name: /Ver meu progresso/i })
+      await screen.findByRole("group", { name: /Seu destaque no leaderboard/i })
     ).toBeInTheDocument();
   });
 });
+
 
 
 
