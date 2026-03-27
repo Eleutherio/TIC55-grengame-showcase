@@ -1,28 +1,28 @@
-﻿import { lazy } from "react";
-import { Navigate, createBrowserRouter } from "react-router-dom";
+﻿import { Navigate, createBrowserRouter } from "react-router-dom";
 import { withAdminGuard, withPrivateGuard } from "../lib/guards";
+import { lazyWithRetry } from "../lib/lazyWithRetry";
 import { withSuspense } from "../lib/withSuspense";
 
-const DashboardLayoutMobile = lazy(() => import("../layout/mobile/DashboardLayoutMobile"));
-const PaginaInicial = lazy(() => import("../pages/PaginaInicial"));
-const ListarCursos = lazy(() => import("../pages/ListarCursos"));
-const Ranking = lazy(() => import("../pages/Ranking"));
-const Perfil = lazy(() => import("../pages/Perfil"));
-const Progresso = lazy(() => import("../pages/Progresso"));
-const Dashboard = lazy(() => import("../pages/Dashboard"));
-const AdministrarUsuarios = lazy(() => import("../pages/AdministrarUsuarios"));
-const AdministrarGames = lazy(() => import("../pages/AdministrarGames"));
-const AdministrarMissoes = lazy(() => import("../pages/AdministrarMissoes"));
-const AdministrarBadges = lazy(() => import("../pages/AdministrarBadges"));
-const Login = lazy(() => import("../pages/Login"));
-const RecuperarSenha = lazy(
+const DashboardLayoutMobile = lazyWithRetry(() => import("../layout/mobile/DashboardLayoutMobile"));
+const PaginaInicial = lazyWithRetry(() => import("../pages/PaginaInicial"));
+const ListarCursos = lazyWithRetry(() => import("../pages/ListarCursos"));
+const Ranking = lazyWithRetry(() => import("../pages/Ranking"));
+const Perfil = lazyWithRetry(() => import("../pages/Perfil"));
+const Progresso = lazyWithRetry(() => import("../pages/Progresso"));
+const Dashboard = lazyWithRetry(() => import("../pages/Dashboard"));
+const AdministrarUsuarios = lazyWithRetry(() => import("../pages/AdministrarUsuarios"));
+const AdministrarGames = lazyWithRetry(() => import("../pages/AdministrarGames"));
+const AdministrarMissoes = lazyWithRetry(() => import("../pages/AdministrarMissoes"));
+const AdministrarBadges = lazyWithRetry(() => import("../pages/AdministrarBadges"));
+const Login = lazyWithRetry(() => import("../pages/Login"));
+const RecuperarSenha = lazyWithRetry(
   () => import("../pages/RecuperarSenha/RecuperarSenha")
 );
-const NovaSenha = lazy(() => import("../pages/RecuperarSenha/NovaSenha"));
-const NotFound = lazy(() => import("../pages/NotFound"));
-const Trilhas = lazy(() => import("../pages/Trilhas"));
-const Missao = lazy(() => import("../pages/Missao"));
-const AcessoTemporario = lazy(() => import("../pages/AcessoTemporario"));
+const NovaSenha = lazyWithRetry(() => import("../pages/RecuperarSenha/NovaSenha"));
+const NotFound = lazyWithRetry(() => import("../pages/NotFound"));
+const Trilhas = lazyWithRetry(() => import("../pages/Trilhas"));
+const Missao = lazyWithRetry(() => import("../pages/Missao"));
+const AcessoTemporario = lazyWithRetry(() => import("../pages/AcessoTemporario"));
 
 export const routerMobile = createBrowserRouter([
   { path: "/login", element: withSuspense(<Login />) },
