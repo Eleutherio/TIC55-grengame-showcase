@@ -50,15 +50,6 @@ def visible_missions_queryset_for(user, base_queryset=None):
     queryset = base_queryset if base_queryset is not None else Mission.objects.all()
     visible_games = visible_games_queryset_for(user).values_list("id", flat=True)
 
-    if is_temporary_admin(user):
-        return queryset.filter(
-            game_id__in=visible_games
-        ).filter(
-            Q(created_by=user)
-            | Q(created_by__isnull=True)
-            | Q(created_by__is_temporary_account=False)
-        )
-
     return queryset.filter(game_id__in=visible_games)
 
 
