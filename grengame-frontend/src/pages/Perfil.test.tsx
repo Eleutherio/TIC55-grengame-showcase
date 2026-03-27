@@ -1,4 +1,4 @@
-﻿import { render, waitFor, fireEvent } from "@testing-library/react";
+import { render, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi, afterEach, beforeEach, describe, expect, it } from "vitest";
 import Perfil from "./Perfil";
@@ -84,7 +84,7 @@ const createFetchMock = (avatarUrl = "https://cdn.example.com/avatar.png") => {
       first_name: "John",
       last_name: "Doe",
       pontos: 100,
-      nivel: "NÃ­vel 1",
+      nivel: "Nivel 1",
     }),
   };
 
@@ -107,8 +107,8 @@ const createFetchMock = (avatarUrl = "https://cdn.example.com/avatar.png") => {
     ok: true,
     json: async () => [
       { id: 1, name: "Mestre do game" },
-      { id: 2, name: "Segurança Digital"},
-      { id: 3, name: "Inovação Verde" },
+      { id: 2, name: "Seguranca Digital"},
+      { id: 3, name: "Inovacao Verde" },
     ],
   };
 
@@ -202,7 +202,7 @@ describe("Perfil upload de avatar", () => {
     const file = new File(["avatar"], "avatar.png", { type: "image/png" });
     fireEvent.change(fileInput, { target: { files: [file] } });
 
-    await renderResult.findByAltText("Pré-visualização do avatar");
+    await renderResult.findByAltText("Pre-visualizacao do avatar");
 
     await user.click(renderResult.getByRole("button", { name: /salvar foto/i }));
 
@@ -223,7 +223,7 @@ describe("Perfil upload de avatar", () => {
     expect(toDataURLSpy).toHaveBeenCalled();
   });
 
-  it("exibe erro ao selecionar formato inválido", async () => {
+  it("exibe erro ao selecionar formato invalido", async () => {
     const user = userEvent.setup();
     const renderResult = render(<Perfil />);
 
@@ -270,7 +270,7 @@ describe("Perfil upload de avatar", () => {
     expect(renderResult.queryByRole("button", { name: /salvar nome/i })).toBeNull();
   });
 
-  it("mostra erro de validação e não chama API para nome inválido", async () => {
+  it("mostra erro de validacao e nao chama API para nome invalido", async () => {
     const user = userEvent.setup();
     const renderResult = render(<Perfil />);
 
@@ -303,7 +303,7 @@ describe("Perfil upload de avatar", () => {
         first_name: "John",
         last_name: "Doe",
         pontos: 100,
-        nivel: "NÃ­vel 1",
+        nivel: "Nivel 1",
       }),
     };
     const uploadResponse: FetchResponse = {

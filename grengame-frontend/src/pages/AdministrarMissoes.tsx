@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { DragEvent } from "react";
 import { useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";

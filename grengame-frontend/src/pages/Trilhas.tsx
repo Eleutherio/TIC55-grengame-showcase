@@ -91,10 +91,10 @@ export default function Trilhas() {
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
 
-  // ====== Scale automático do canvas ======
+  // ====== Scale automatico do canvas ======
   const missionsAreaRef = useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(1);
-  //garante que o userId é memorizado e não recalcula toda hora
+  // garante que o userId e memorizado e nao recalcula toda hora
   const currentUserId = useMemo(() => {
     const raw = localStorage.getItem("userId");
     if (!raw) return undefined;
@@ -117,7 +117,7 @@ export default function Trilhas() {
     const ro = new ResizeObserver(() => {
       const { width, height } = el.getBoundingClientRect();
 
-      // folga para não encostar nas bordas
+      // folga para nao encostar nas bordas
       const pad = 12;
       const heightForScale = isScrollable ? FIGMA_H : canvasHeight;
       const s = Math.min(
@@ -125,7 +125,7 @@ export default function Trilhas() {
         (height - pad) / heightForScale,
       );
 
-      // mínimo pra não sumir
+      // minimo para nao sumir
       const minScale = width <= 1080 ? 0.22 : 0.45;
       const clamped = Math.max(minScale, Math.min(1, s));
       const normalizedScale = Number(clamped.toFixed(SCALE_DECIMALS));
@@ -170,7 +170,7 @@ export default function Trilhas() {
           }
         }
 
-        // Buscar missões
+        // Buscar missoes
         const response = await fetch(
           `${API_URL}/auth/games/${gameId}/trilha/`,
           {
@@ -197,7 +197,7 @@ export default function Trilhas() {
         );
         setMissions(sorted);
       } catch (error) {
-        console.error("Erro ao carregar missões:", error);
+        console.error("Erro ao carregar missoes:", error);
       } finally {
         if (isMounted) {
           setIsLoadingMissions(false);
@@ -311,10 +311,10 @@ export default function Trilhas() {
   };
 
   /**
-   * Posições:
+   * Posicoes:
    * - 3 colunas (esquerda, centro, direita)
    * - linhas alternam a ordem para manter o zigzag
-   * - 4º fica abaixo do 2º, 8º abaixo do 4º, etc.
+   * - 4o fica abaixo do 2o, 8o abaixo do 4o, etc.
    */
   const positionsPx = useMemo(() => {
     return missions.map((_mission, idx) => {
@@ -374,7 +374,7 @@ export default function Trilhas() {
 
   return (
     <div className="trilhas-wrapper">
-      {/* Título central */}
+      {/* Titulo central */}
       <div className="trilhas-title-wrap">
         <div className="trilhas-title-card">
           <h1 className="trilhas-title">{journeyTitle}</h1>
@@ -403,7 +403,7 @@ export default function Trilhas() {
         />
       </section>
 
-      {/* Missões */}
+      {/* Missoes */}
       <div
         className={`trilhas-missions-area${isScrollable ? " trilhas-missions-area--scroll" : ""
           }`}
@@ -425,7 +425,7 @@ export default function Trilhas() {
                 transform: `scale(${scale})`,
               }}
             >
-              {/* Linha vertical (atrás) */}
+              {/* Linha vertical (atras) */}
               <svg
                 className="trilha-lines"
                 viewBox={`0 0 ${FIGMA_W} ${canvasHeight}`}
@@ -479,7 +479,7 @@ export default function Trilhas() {
                   Math.min(totalStars, mission.stars_earned || 0),
                 );
 
-                // ? classes específicas para ajuste fino via CSS (se precisar)
+                // classes especificas para ajuste fino via CSS (se precisar)
                 const extraClass =
                   (mission.mission_type === "quiz"
                     ? " trilha-ellipse--quiz"
@@ -503,8 +503,8 @@ export default function Trilhas() {
                     aria-label={`${mission.title} - ${isLocked
                         ? "Bloqueada"
                         : isCompleted
-                          ? "Concluída"
-                          : "Disponível"
+                          ? "Concluida"
+                          : "Disponivel"
                       }`}
                     aria-describedby={
                       displayDescription
@@ -558,7 +558,7 @@ export default function Trilhas() {
                         role="tooltip"
                       >
                         <span className="trilha-tooltip__label">
-                          Descrição curta
+                          Descricao curta
                         </span>
                         <span className="trilha-tooltip__text">
                           {displayDescription}
@@ -573,12 +573,12 @@ export default function Trilhas() {
         ) : (
           <div className="missions-status-card" role="status" aria-live="polite">
             <p className="missions-status-title">
-              Aguarde, estamo carregando as missões desse game...
+              Aguarde, estamo carregando as missoes desse game...
             </p>
             <p className="missions-status-subtitle">
               {isLoadingMissions
                 ? "Isso pode levar alguns segundos."
-                : "Se persistir, atualize a página ou volte para a lista de games e tente novamente."}
+                : "Se persistir, atualize a pagina ou volte para a lista de games e tente novamente."}
             </p>
           </div>
         )}
