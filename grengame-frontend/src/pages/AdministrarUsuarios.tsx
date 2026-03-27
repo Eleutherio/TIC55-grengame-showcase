@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import SearchField from "../components/SearchField";
 import { getCurrentUserId } from "../utils/auth";

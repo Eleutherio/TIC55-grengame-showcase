@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import "./AdministrarBadges.css";
 import { API_URL } from "../config/api";
 import CartaoJogoCriterioBadge from "../components/badges/CartaoJogoCriterioBadge";
