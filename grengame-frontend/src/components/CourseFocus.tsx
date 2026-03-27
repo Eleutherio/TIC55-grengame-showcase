@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import CourseChallengesBadge, {
   type CourseChallengesBadgeStatus,
 } from "./CourseChallengesBadge";
@@ -24,7 +24,7 @@ type CourseFocusProps = {
   isEnrolled: boolean;
   challengesStatus?: CourseChallengesBadgeStatus;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 };
 
 export default function CourseFocus({
@@ -37,6 +37,18 @@ export default function CourseFocus({
   onClose,
   onConfirm,
 }: CourseFocusProps) {
+  const [isLoadingTrail, setIsLoadingTrail] = useState(false);
+
+  const handleConfirmClick = async () => {
+    if (isLoadingTrail) return;
+    setIsLoadingTrail(true);
+    try {
+      await Promise.resolve(onConfirm());
+    } finally {
+      setIsLoadingTrail(false);
+    }
+  };
+
   return (
     <div
       className="course-focus-wrapper"
@@ -92,9 +104,17 @@ export default function CourseFocus({
           <button
             type="button"
             className="primary-action focus-cta"
-            onClick={onConfirm}
+            onClick={() => {
+              void handleConfirmClick();
+            }}
+            disabled={isLoadingTrail}
+            aria-busy={isLoadingTrail}
           >
-            {isEnrolled ? "Continuar jogando" : "Quero jogar"}
+            {isLoadingTrail
+              ? "Carregando trilha..."
+              : isEnrolled
+                ? "Continuar jogando"
+                : "Quero jogar"}
           </button>
         </div>
       </article>

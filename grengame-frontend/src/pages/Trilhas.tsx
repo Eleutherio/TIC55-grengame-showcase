@@ -533,10 +533,10 @@ export default function Trilhas() {
 
                       {isCompleted && (
                         <span className="ellipse-completed-overlay" aria-hidden="true">
-                          <span className="ellipse-completed-check">?</span>
+                          <span className="ellipse-completed-check">{"\u2713"}</span>
                         </span>
                       )}
-                      {isLocked && <span className="ellipse-lock">??</span>}
+                      {isLocked && <span className="ellipse-lock">{"\uD83D\uDD12"}</span>}
                     </div>
 
                     <div className="mission-stars">
@@ -545,7 +545,7 @@ export default function Trilhas() {
                           key={i}
                           style={{ opacity: i < earned ? 1 : 0.25 }}
                         >
-                          ?
+                          {"\u2605"}
                         </span>
                       ))}
                     </div>
@@ -590,7 +590,7 @@ export default function Trilhas() {
           className="trilhas-footer-btn trilhas-footer-btn--back"
           onClick={() => navigate("/app/cursos")}
         >
-          ? Voltar
+          {"\u2190 Voltar"}
         </button>
 
         <button
@@ -598,7 +598,7 @@ export default function Trilhas() {
           onClick={handlePlayNext}
           disabled={!hasAvailableMission()}
         >
-          Jogar ?
+          {"Jogar \u25B6"}
         </button>
       </div>
     </div>
