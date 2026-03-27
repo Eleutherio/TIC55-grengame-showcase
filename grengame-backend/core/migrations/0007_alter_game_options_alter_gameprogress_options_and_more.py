@@ -6,103 +6,174 @@ from django.conf import settings
 from django.db import migrations, models
 
 
+def drop_legacy_unique_user_course_progress(apps, schema_editor):
+    """
+    Compatibilidade para bases PostgreSQL que tenham executado uma versão
+    antiga da migration 0006 (sem remover a constraint antiga).
+    """
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    with schema_editor.connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE core_courseprogress "
+            "DROP CONSTRAINT IF EXISTS unique_user_course_progress;"
+        )
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0006_rename_models_and_fields'),
+        ("core", "0006_rename_models_and_fields"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='game',
-            options={'ordering': ['-created_at'], 'verbose_name': 'Game', 'verbose_name_plural': 'Games'},
+            name="game",
+            options={
+                "ordering": ["-created_at"],
+                "verbose_name": "Game",
+                "verbose_name_plural": "Games",
+            },
         ),
         migrations.AlterModelOptions(
-            name='gameprogress',
-            options={'ordering': ['-started_at'], 'verbose_name': 'Progresso do Game', 'verbose_name_plural': 'Progressos dos Games'},
+            name="gameprogress",
+            options={
+                "ordering": ["-started_at"],
+                "verbose_name": "Progresso do Game",
+                "verbose_name_plural": "Progressos dos Games",
+            },
         ),
         migrations.AlterModelOptions(
-            name='missioncompletions',
-            options={'ordering': ['-completed_at'], 'verbose_name': 'Conclusão de Missão', 'verbose_name_plural': 'Conclusões de Missões'},
+            name="missioncompletions",
+            options={
+                "ordering": ["-completed_at"],
+                "verbose_name": "Conclusão de Missão",
+                "verbose_name_plural": "Conclusões de Missões",
+            },
         ),
         migrations.AlterModelOptions(
-            name='user',
-            options={'ordering': ['-created_at'], 'verbose_name': 'Usuário', 'verbose_name_plural': 'Usuários'},
+            name="user",
+            options={
+                "ordering": ["-created_at"],
+                "verbose_name": "Usuário",
+                "verbose_name_plural": "Usuários",
+            },
+        ),
+        migrations.RunPython(
+            drop_legacy_unique_user_course_progress,
+            migrations.RunPython.noop,
         ),
         migrations.RemoveConstraint(
-            model_name='gameprogress',
-            name='unique_user_course_progress',
-        ),
-        migrations.RemoveConstraint(
-            model_name='missioncompletions',
-            name='unique_user_mission',
+            model_name="missioncompletions",
+            name="unique_user_mission",
         ),
         migrations.RemoveField(
-            model_name='gameprogress',
-            name='completed',
+            model_name="gameprogress",
+            name="completed",
         ),
         migrations.RemoveField(
-            model_name='missioncompletions',
-            name='progress',
+            model_name="missioncompletions",
+            name="progress",
         ),
         migrations.AlterField(
-            model_name='game',
-            name='name',
-            field=models.CharField(max_length=100, verbose_name='Nome do Game'),
+            model_name="game",
+            name="name",
+            field=models.CharField(max_length=100, verbose_name="Nome do Game"),
         ),
         migrations.AlterField(
-            model_name='gameprogress',
-            name='game',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='user_progress', to='core.game', verbose_name='Game'),
+            model_name="gameprogress",
+            name="game",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="user_progress",
+                to="core.game",
+                verbose_name="Game",
+            ),
         ),
         migrations.AlterField(
-            model_name='gameprogress',
-            name='progress_percentage',
-            field=models.IntegerField(default=0, validators=[django.core.validators.MinValueValidator(0), django.core.validators.MaxValueValidator(100)], verbose_name='Porcentagem de Progresso'),
+            model_name="gameprogress",
+            name="progress_percentage",
+            field=models.IntegerField(
+                default=0,
+                validators=[
+                    django.core.validators.MinValueValidator(0),
+                    django.core.validators.MaxValueValidator(100),
+                ],
+                verbose_name="Porcentagem de Progresso",
+            ),
         ),
         migrations.AlterField(
-            model_name='gameprogress',
-            name='user',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='game_progress', to=settings.AUTH_USER_MODEL, verbose_name='Usuário'),
+            model_name="gameprogress",
+            name="user",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="game_progress",
+                to=settings.AUTH_USER_MODEL,
+                verbose_name="Usuário",
+            ),
         ),
         migrations.AlterField(
-            model_name='mission',
-            name='points_value',
-            field=models.IntegerField(default=0, validators=[django.core.validators.MinValueValidator(0)], verbose_name='Valor em Pontos'),
+            model_name="mission",
+            name="points_value",
+            field=models.IntegerField(
+                default=0,
+                validators=[django.core.validators.MinValueValidator(0)],
+                verbose_name="Valor em Pontos",
+            ),
         ),
         migrations.AlterField(
-            model_name='missioncompletions',
-            name='completed_at',
-            field=models.DateTimeField(auto_now_add=True, null=True, verbose_name='Concluída em'),
+            model_name="missioncompletions",
+            name="completed_at",
+            field=models.DateTimeField(
+                auto_now_add=True,
+                null=True,
+                verbose_name="Concluída em",
+            ),
         ),
         migrations.AlterField(
-            model_name='missioncompletions',
-            name='mission',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='completions', to='core.mission', verbose_name='Missão'),
+            model_name="missioncompletions",
+            name="mission",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="completions",
+                to="core.mission",
+                verbose_name="Missão",
+            ),
         ),
         migrations.AlterField(
-            model_name='missioncompletions',
-            name='user',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='mission_completions', to=settings.AUTH_USER_MODEL, verbose_name='Usuário'),
+            model_name="missioncompletions",
+            name="user",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="mission_completions",
+                to=settings.AUTH_USER_MODEL,
+                verbose_name="Usuário",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='gameprogress',
-            constraint=models.UniqueConstraint(fields=('user', 'game'), name='unique_user_game_progress'),
+            model_name="gameprogress",
+            constraint=models.UniqueConstraint(
+                fields=("user", "game"),
+                name="unique_user_game_progress",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='missioncompletions',
-            constraint=models.UniqueConstraint(fields=('user', 'mission'), name='unique_user_mission_completion'),
+            model_name="missioncompletions",
+            constraint=models.UniqueConstraint(
+                fields=("user", "mission"),
+                name="unique_user_mission_completion",
+            ),
         ),
         migrations.AlterModelTable(
-            name='game',
-            table='core_course',
+            name="game",
+            table="core_course",
         ),
         migrations.AlterModelTable(
-            name='gameprogress',
-            table='core_courseprogress',
+            name="gameprogress",
+            table="core_courseprogress",
         ),
         migrations.AlterModelTable(
-            name='missioncompletions',
-            table='core_usermission',
+            name="missioncompletions",
+            table="core_usermission",
         ),
     ]
