@@ -1,3 +1,5 @@
+<img width="1918" height="944" alt="image" src="https://github.com/user-attachments/assets/cef077f6-38a8-475f-85db-f4b816d40013" />
+
 # GrenGame Showcase
 
 Plataforma gamificada para treinamentos corporativos, publicada como demonstração de portfólio.
