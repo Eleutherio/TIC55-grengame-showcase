@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "../config/api";
+import { notifyUserDataUpdated } from "../utils/auth";
 
 type MissaoWordleProps = {
   mission: {
@@ -11,6 +12,7 @@ type MissaoWordleProps = {
     content_data: {
       word?: string;
       max_attempts?: number;
+      hints?: string[] | string;
     };
     game: number;
     game_name?: string;
@@ -25,12 +27,18 @@ type LetterState = "correct" | "present" | "absent" | "empty";
 
 export default function MissaoWordle({ mission, onComplete: _onComplete, isCompleted, totalMissions }: MissaoWordleProps) {
   const navigate = useNavigate();
+  const mobileInputRef = useRef<HTMLInputElement>(null);
   const [showInstructions, setShowInstructions] = useState(!isCompleted);
   const [showVictory, setShowVictory] = useState(false);
+  const [showHintsModal, setShowHintsModal] = useState(false);
   const [currentAttempt, setCurrentAttempt] = useState("");
   const [attempts, setAttempts] = useState<string[]>([]);
   const [gameWon, setGameWon] = useState(false);
   const [usedLetters, setUsedLetters] = useState<Record<string, LetterState>>({});
+  const [revealedHints, setRevealedHints] = useState<Record<number, string>>({});
+  const [isRevealingHintIndex, setIsRevealingHintIndex] = useState<number | null>(null);
+  const [hintFeedback, setHintFeedback] = useState<string>("");
+  const [hintError, setHintError] = useState<string>("");
   const [isValidating, setIsValidating] = useState(false);
   const [earnedPoints, setEarnedPoints] = useState<number | null>(null);
   const [hasNextMission, setHasNextMission] = useState(
@@ -44,6 +52,22 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
   const targetWord = (mission.content_data.word || "").toUpperCase();
   const maxAttempts = mission.content_data.max_attempts || 6;
   const wordLength = targetWord.length || 5;
+  const normalizedHints = (() => {
+    const rawHints = mission.content_data.hints;
+    if (Array.isArray(rawHints)) {
+      return rawHints
+        .map((hint) => String(hint).trim())
+        .filter((hint) => hint.length > 0);
+    }
+    if (typeof rawHints === "string") {
+      return rawHints
+        .split("\n")
+        .map((hint) => hint.trim())
+        .filter((hint) => hint.length > 0);
+    }
+    return [] as string[];
+  })();
+  const hasHints = normalizedHints.length > 0;
   const isMobile = viewportWidth <= 768;
   const isTablet = viewportWidth <= 1024;
   const keyboardKeyWidth = isMobile ? 28 : isTablet ? 36 : 44;
@@ -128,26 +152,55 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
     };
   }, [mission.game, mission.id, mission.order, totalMissions]);
 
-  const getLetterState = (position: number, word: string): LetterState => {
-    if (word[position] === targetWord[position]) {
-      return "correct";
+  const evaluateAttempt = (word: string): LetterState[] => {
+    const states: LetterState[] = Array.from(
+      { length: wordLength },
+      () => "absent",
+    );
+    const remainingLetters: Record<string, number> = {};
+
+    // Primeira passagem: marca acertos exatos e contabiliza letras restantes.
+    for (let i = 0; i < wordLength; i++) {
+      const attemptLetter = word[i];
+      const targetLetter = targetWord[i];
+
+      if (attemptLetter === targetLetter) {
+        states[i] = "correct";
+      } else {
+        remainingLetters[targetLetter] = (remainingLetters[targetLetter] || 0) + 1;
+      }
     }
-    if (targetWord.includes(word[position])) {
-      return "present";
+
+    // Segunda passagem: marca presentes respeitando quantidade restante.
+    for (let i = 0; i < wordLength; i++) {
+      if (states[i] === "correct") continue;
+
+      const attemptLetter = word[i];
+      const remainingCount = remainingLetters[attemptLetter] || 0;
+      if (remainingCount > 0) {
+        states[i] = "present";
+        remainingLetters[attemptLetter] = remainingCount - 1;
+      }
     }
-    return "absent";
+
+    return states;
   };
 
-  const updateUsedLetters = (word: string) => {
+  const updateUsedLetters = (word: string, evaluation: LetterState[]) => {
     const newUsedLetters = { ...usedLetters };
+    const priority: Record<LetterState, number> = {
+      empty: 0,
+      absent: 1,
+      present: 2,
+      correct: 3,
+    };
 
     for (let i = 0; i < word.length; i++) {
       const letter = word[i];
-      const state = getLetterState(i, word);
+      const state = evaluation[i];
+      const currentState = newUsedLetters[letter] ?? "empty";
 
-      if (!newUsedLetters[letter] ||
-        (state === "correct") ||
-        (state === "present" && newUsedLetters[letter] === "absent")) {
+      if (priority[state] > priority[currentState]) {
         newUsedLetters[letter] = state;
       }
     }
@@ -166,12 +219,71 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
     setCurrentAttempt(currentAttempt.slice(0, -1));
   };
 
+  const handleRevealHint = async (hintIndex: number) => {
+    if (isRevealingHintIndex !== null) return;
+    if (revealedHints[hintIndex]) return;
+    if (!hasHints) return;
+
+    setHintError("");
+    setHintFeedback("");
+    setIsRevealingHintIndex(hintIndex);
+
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_URL}/auth/missoes/${mission.id}/wordle/hints/use/`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ hint_index: hintIndex }),
+        },
+      );
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            error?: string;
+            hint_text?: string;
+            points_charged?: number;
+            status?: string;
+          }
+        | null;
+
+      if (!response.ok) {
+        setHintError(payload?.error || "Não foi possível revelar a dica.");
+        return;
+      }
+
+      const revealedText = payload?.hint_text || normalizedHints[hintIndex];
+      setRevealedHints((current) => ({
+        ...current,
+        [hintIndex]: revealedText,
+      }));
+
+      const charged = Number(payload?.points_charged || 0);
+      if (charged > 0) {
+        setHintFeedback(`Dica revelada. -${charged} pontos aplicados.`);
+      } else {
+        setHintFeedback("Dica revelada com uso gratuito.");
+      }
+
+      notifyUserDataUpdated();
+    } catch (error) {
+      setHintError("Erro de conexão ao revelar a dica.");
+    } finally {
+      setIsRevealingHintIndex(null);
+    }
+  };
+
   const handleSubmit = async () => {
     if (currentAttempt.length !== wordLength || gameWon || isValidating) return;
 
+    const attemptEvaluation = evaluateAttempt(currentAttempt);
     const newAttempts = [...attempts, currentAttempt];
     setAttempts(newAttempts);
-    updateUsedLetters(currentAttempt);
+    updateUsedLetters(currentAttempt, attemptEvaluation);
 
     if (currentAttempt === targetWord) {
       setGameWon(true);
@@ -278,7 +390,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
           gap: isMobile ? "8px" : "12px",
           boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
         }}>
-          <span style={{ fontSize: "24px" }}>⚠️</span>
+          <span style={{ fontSize: "24px" }}>{"\u26A0\uFE0F"}</span>
           <div>
             <p style={{
               margin: 0,
@@ -346,7 +458,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
           }}>
             +{earnedPoints !== null ? earnedPoints : mission.points_value}
             <span role="img" aria-label="trophy" style={{ fontSize: "18px" }}>
-              🏆
+              {"\u{1F3C6}"}
             </span>
           </div>
         </div>
@@ -384,7 +496,15 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
         gap: isMobile ? "14px" : "24px",
         alignItems: isMobile ? "stretch" : "flex-start",
       }}>
-        <div style={{ display: "flex", justifyContent: isMobile ? "center" : "flex-start" }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: isMobile ? "row" : "column",
+            justifyContent: isMobile ? "center" : "flex-start",
+            alignItems: "center",
+            gap: "10px",
+          }}
+        >
           <button
             onClick={() => setShowInstructions(true)}
             style={{
@@ -400,8 +520,35 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
               justifyContent: "center",
               boxShadow: "0 4px 12px rgba(255, 193, 7, 0.4)",
             }}
+            aria-label="Abrir instruções"
           >
-            ❓
+            ?
+          </button>
+          <button
+            onClick={() => {
+              setHintError("");
+              setHintFeedback("");
+              setShowHintsModal(true);
+            }}
+            disabled={!hasHints}
+            style={{
+              minWidth: isMobile ? "96px" : "108px",
+              height: isMobile ? "44px" : "48px",
+              borderRadius: "12px",
+              backgroundColor: hasHints ? "#1E2875" : "#9EA5C8",
+              border: "1px solid #FFC107",
+              color: "#FFC107",
+              cursor: hasHints ? "pointer" : "not-allowed",
+              fontSize: isMobile ? "14px" : "15px",
+              fontWeight: "700",
+              padding: "0 14px",
+              boxShadow: hasHints
+                ? "0 4px 12px rgba(30, 40, 117, 0.35)"
+                : "none",
+            }}
+            aria-label="Abrir dicas"
+          >
+            Dicas
           </button>
         </div>
 
@@ -461,22 +608,56 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
             gap: `${tileGap}px`,
             marginBottom: isMobile ? "18px" : "24px",
           }}>
+            <input
+              ref={mobileInputRef}
+              type="text"
+              inputMode="text"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              value={currentAttempt}
+              onChange={(event) => {
+                const normalized = event.target.value
+                  .toUpperCase()
+                  .replace(/[^A-Z]/g, "")
+                  .slice(0, wordLength);
+                setCurrentAttempt(normalized);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void handleSubmit();
+                }
+              }}
+              style={{
+                position: "absolute",
+                opacity: 0,
+                width: "1px",
+                height: "1px",
+                pointerEvents: "none",
+              }}
+              aria-hidden="true"
+              tabIndex={-1}
+            />
             {Array.from({ length: maxAttempts }).map((_, rowIndex) => {
               const isCurrentRow = rowIndex === attempts.length;
               const attempt = attempts[rowIndex] || (isCurrentRow ? currentAttempt : "");
+              const attemptEvaluation =
+                rowIndex < attempts.length ? evaluateAttempt(attempt) : [];
 
               return (
                 <div key={rowIndex} style={{
                   display: "flex",
                   gap: `${tileGap}px`,
                   justifyContent: "center",
+                  cursor: isCurrentRow && !gameWon ? "text" : "default",
                 }}>
                   {Array.from({ length: wordLength }).map((_, colIndex) => {
                     const letter = attempt[colIndex] || "";
                     let backgroundColor = "#5B4CCC";
 
                     if (rowIndex < attempts.length) {
-                      const state = getLetterState(colIndex, attempt);
+                      const state = attemptEvaluation[colIndex];
                       if (state === "correct") backgroundColor = "#4CAF50";
                       else if (state === "present") backgroundColor = "#FF9800";
                       else backgroundColor = "#1E2875";
@@ -485,6 +666,11 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                     return (
                       <div
                         key={colIndex}
+                        onClick={() => {
+                          if (isCurrentRow && !gameWon) {
+                            mobileInputRef.current?.focus();
+                          }
+                        }}
                         style={{
                           width: `${tileSize}px`,
                           height: `${tileSize}px`,
@@ -539,7 +725,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                 e.currentTarget.style.boxShadow = "0 2px 6px rgba(255, 193, 7, 0.3)";
               }}
             >
-              ← Voltar
+              {"\u2190"} Voltar
             </button>
           </div>
           <div style={{
@@ -565,7 +751,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                 minWidth: isMobile ? "200px" : "auto",
               }}
             >
-              ⌫ Backspace
+              {"\u232B"} Backspace
             </button>
             <button
               onClick={handleSubmit}
@@ -583,11 +769,215 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                 minWidth: isMobile ? "200px" : "auto",
               }}
             >
-              ↵ Enter
+              {"\u21B5"} Enter
             </button>
           </div>
         </div>
       </div>
+
+      {showHintsModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(7, 13, 56, 0.62)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1100,
+            padding: isMobile ? "12px" : "18px",
+          }}
+        >
+          <div
+            style={{
+              width: isMobile ? "100%" : "min(620px, 100%)",
+              maxHeight: "calc(100vh - 24px)",
+              overflowY: "auto",
+              backgroundColor: "#1E2875",
+              border: "1px solid #FFC107",
+              borderRadius: "16px",
+              padding: isMobile ? "18px 14px" : "24px 22px",
+              position: "relative",
+              boxShadow: "0 18px 38px rgba(8, 14, 56, 0.45)",
+            }}
+          >
+            <button
+              onClick={() => setShowHintsModal(false)}
+              aria-label="Fechar dicas"
+              style={{
+                position: "absolute",
+                top: "12px",
+                right: "12px",
+                width: "32px",
+                height: "32px",
+                borderRadius: "50%",
+                border: "1px solid #FFC107",
+                backgroundColor: "transparent",
+                color: "#FFC107",
+                fontSize: "18px",
+                cursor: "pointer",
+              }}
+            >
+              ×
+            </button>
+
+            <h2
+              style={{
+                margin: 0,
+                marginBottom: "8px",
+                color: "#FFC107",
+                fontSize: isMobile ? "20px" : "24px",
+                fontWeight: "800",
+              }}
+            >
+              Dicas do Wordle
+            </h2>
+            <p
+              style={{
+                margin: 0,
+                marginBottom: "14px",
+                color: "#EAF0FF",
+                fontSize: isMobile ? "13px" : "14px",
+                lineHeight: "1.5",
+              }}
+            >
+              1 uso de dica é gratuito nesta missão. A partir da segunda dica
+              revelada, cada uso consome 10 pontos da sua pontuação geral.
+            </p>
+
+            {hintFeedback && (
+              <div
+                style={{
+                  marginBottom: "10px",
+                  borderRadius: "10px",
+                  padding: "10px 12px",
+                  border: "1px solid #22C55E",
+                  backgroundColor: "rgba(34, 197, 94, 0.12)",
+                  color: "#D7FFE8",
+                  fontSize: isMobile ? "13px" : "14px",
+                }}
+              >
+                {hintFeedback}
+              </div>
+            )}
+
+            {hintError && (
+              <div
+                style={{
+                  marginBottom: "10px",
+                  borderRadius: "10px",
+                  padding: "10px 12px",
+                  border: "1px solid #F87171",
+                  backgroundColor: "rgba(248, 113, 113, 0.14)",
+                  color: "#FFE3E3",
+                  fontSize: isMobile ? "13px" : "14px",
+                }}
+              >
+                {hintError}
+              </div>
+            )}
+
+            {!hasHints ? (
+              <div
+                style={{
+                  borderRadius: "12px",
+                  border: "1px solid rgba(255, 199, 0, 0.4)",
+                  backgroundColor: "rgba(255, 255, 255, 0.06)",
+                  padding: "12px",
+                  color: "#EAF0FF",
+                  fontSize: isMobile ? "13px" : "14px",
+                }}
+              >
+                Esta missão ainda não possui dicas cadastradas.
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px",
+                }}
+              >
+                {normalizedHints.map((hint, index) => {
+                  const revealedHint = revealedHints[index];
+                  const isRevealed = typeof revealedHint === "string";
+                  const canReveal = !isRevealed && isRevealingHintIndex === null;
+                  const displayText = isRevealed ? revealedHint : hint;
+
+                  return (
+                    <div
+                      key={`hint-${index}`}
+                      style={{
+                        border: "1px solid rgba(255, 199, 0, 0.45)",
+                        borderRadius: "12px",
+                        backgroundColor: "rgba(255, 255, 255, 0.08)",
+                        padding: isMobile ? "10px 10px 12px" : "12px 12px 14px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: "10px",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            color: "#FFC107",
+                            fontSize: isMobile ? "13px" : "14px",
+                            fontWeight: "700",
+                          }}
+                        >
+                          Dica {index + 1}
+                        </span>
+                        <button
+                          onClick={() => void handleRevealHint(index)}
+                          disabled={!canReveal}
+                          style={{
+                            borderRadius: "8px",
+                            border: "none",
+                            padding: "7px 10px",
+                            fontSize: isMobile ? "12px" : "13px",
+                            fontWeight: "700",
+                            cursor: canReveal ? "pointer" : "not-allowed",
+                            backgroundColor: isRevealed ? "#22C55E" : "#FFC107",
+                            color: isRevealed ? "#08210F" : "#1E2875",
+                            opacity: canReveal || isRevealed ? 1 : 0.7,
+                          }}
+                        >
+                          {isRevealed
+                            ? "Revelada"
+                            : isRevealingHintIndex === index
+                              ? "Revelando..."
+                              : "Revelar"}
+                        </button>
+                      </div>
+                      <p
+                        style={{
+                          margin: 0,
+                          color: "#F3F6FF",
+                          fontSize: isMobile ? "13px" : "14px",
+                          lineHeight: "1.45",
+                          filter: isRevealed ? "none" : "blur(6px)",
+                          userSelect: isRevealed ? "text" : "none",
+                          transition: "filter 0.25s ease",
+                        }}
+                      >
+                        {displayText}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {showInstructions && (
         <div style={{
@@ -624,7 +1014,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                 color: "#F44336",
               }}
             >
-              ×
+              X
             </button>
 
             <h2 style={{
@@ -783,7 +1173,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                 color: "#999",
               }}
             >
-              ×
+              X
             </button>
 
             <h2 style={{
@@ -793,7 +1183,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
               marginBottom: "8px",
               textAlign: "center",
             }}>
-              🎉 Parabéns!
+              {"\u{1F389}"} Parabéns!
             </h2>
 
             <p style={{
@@ -817,7 +1207,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                 borderRadius: "8px",
                 textAlign: "center",
               }}>
-                <div style={{ fontSize: isMobile ? "18px" : "20px", marginBottom: "8px" }}>🏆</div>
+                <div style={{ fontSize: isMobile ? "18px" : "20px", marginBottom: "8px" }}>{"\u{1F3C6}"}</div>
                 <div style={{ fontSize: isMobile ? "11px" : "12px", color: "white", marginBottom: "4px" }}>Nível</div>
                 <div style={{ fontSize: isMobile ? "22px" : "24px", fontWeight: "700", color: "white" }}>1</div>
               </div>
@@ -828,7 +1218,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                 borderRadius: "8px",
                 textAlign: "center",
               }}>
-                <div style={{ fontSize: isMobile ? "18px" : "20px", marginBottom: "8px" }}>💰</div>
+                <div style={{ fontSize: isMobile ? "18px" : "20px", marginBottom: "8px" }}>{"\u{1F4B0}"}</div>
                 <div style={{ fontSize: isMobile ? "11px" : "12px", color: "#1E2875", marginBottom: "4px" }}>Pontos</div>
                 <div style={{ fontSize: isMobile ? "22px" : "24px", fontWeight: "700", color: "#1E2875" }}>+ {earnedPoints !== null ? earnedPoints : mission.points_value}</div>
               </div>
@@ -839,7 +1229,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                 borderRadius: "8px",
                 textAlign: "center",
               }}>
-                <div style={{ fontSize: isMobile ? "18px" : "20px", marginBottom: "8px" }}>😊</div>
+                <div style={{ fontSize: isMobile ? "18px" : "20px", marginBottom: "8px" }}>{"\u{1F60A}"}</div>
                 <div style={{ fontSize: isMobile ? "11px" : "12px", color: "#1E2875", marginBottom: "4px" }}>Taxa de Vitória</div>
                 <div style={{ fontSize: isMobile ? "22px" : "24px", fontWeight: "700", color: "#1E2875" }}>{winRate}%</div>
               </div>
@@ -850,7 +1240,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                 borderRadius: "8px",
                 textAlign: "center",
               }}>
-                <div style={{ fontSize: isMobile ? "18px" : "20px", marginBottom: "8px" }}>🔥</div>
+                <div style={{ fontSize: isMobile ? "18px" : "20px", marginBottom: "8px" }}>{"\u{1F525}"}</div>
                 <div style={{ fontSize: isMobile ? "11px" : "12px", color: "white", marginBottom: "4px" }}>Sequência</div>
                 <div style={{ fontSize: isMobile ? "22px" : "24px", fontWeight: "700", color: "white" }}>{streak}</div>
               </div>
@@ -923,7 +1313,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                   width: isMobile ? "100%" : "auto",
                 }}
               >
-                ← Voltar
+                {"\u2190"} Voltar
               </button>
 
               <button
@@ -961,7 +1351,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                 {isNavigatingToNext
                   ? "Carregando..."
                   : hasNextMission
-                    ? "Próximo →"
+                    ? `Próximo ${"\u2192"}`
                     : "Finalizar Game"}
               </button>
             </div>
