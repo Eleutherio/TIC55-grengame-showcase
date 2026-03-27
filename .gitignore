@@ -55,6 +55,7 @@ grengame-frontend/src/lib/*
 !grengame-frontend/src/lib/AdminGuard.tsx
 !grengame-frontend/src/lib/withSuspense.tsx
 !grengame-frontend/src/lib/utils.ts
+!grengame-frontend/src/lib/lazyWithRetry.ts
 lib64/
 parts/
 sdist/
