@@ -32,11 +32,7 @@ type Me = {
 type UserStats = {
   xp?: number;
   total_xp?: number;
-};
-
-type RankingEntry = {
-  user_id?: number;
-  position?: number;
+  level?: string | number | null;
 };
 
 const getAuthHeaders = (): HeadersInit => {
@@ -69,15 +65,6 @@ const getUserStats = async (): Promise<UserStats | null> => {
   const data = await fetchJson<unknown>(`${AUTH_BASE}/me/stats/`);
   if (!data || typeof data !== "object") return null;
   return data as UserStats;
-};
-
-const getRanking = async (limit: number): Promise<RankingEntry[]> => {
-  const url = new URL(`${AUTH_BASE}/ranking/`);
-  if (Number.isFinite(limit)) {
-    url.searchParams.set("limit", String(limit));
-  }
-  const data = await fetchJson<unknown>(url.toString());
-  return Array.isArray(data) ? (data as RankingEntry[]) : [];
 };
 
 const buildAvatarSrc = (value?: string) => {
@@ -161,6 +148,14 @@ export default function PaginaInicial() {
       if (meRes) setMe(meRes);
       const totalValue = Number(statsRes?.total_xp ?? statsRes?.xp ?? 0);
       setPoints(Number.isFinite(totalValue) ? totalValue : 0);
+      const rawLevel = statsRes?.level;
+      if (typeof rawLevel === "string" && rawLevel.trim()) {
+        setRankingLevel(rawLevel);
+      } else if (typeof rawLevel === "number" && Number.isFinite(rawLevel)) {
+        setRankingLevel(String(rawLevel));
+      } else {
+        setRankingLevel("Indefinido");
+      }
     };
 
     load().catch((err: unknown) => {
@@ -175,53 +170,6 @@ export default function PaginaInicial() {
       active = false;
     };
   }, [authToken, userDataVersion]);
-
-  useEffect(() => {
-    let active = true;
-
-    const loadRanking = async () => {
-      try {
-        const data = await getRanking(50);
-        if (!active) return;
-        if (!Array.isArray(data) || data.length === 0) {
-          setRankingLevel("Bronze");
-          return;
-        }
-
-        const entry = data.find((item) => item.user_id === me?.id) ?? null;
-
-        if (!entry || !entry.position) {
-          setRankingLevel("Bronze");
-          return;
-        }
-
-        const tier =
-          entry.position <= 3
-            ? "Ouro"
-            : entry.position <= 10
-              ? "Prata"
-              : "Bronze";
-        setRankingLevel(tier);
-      } catch (err) {
-        if (!active) return;
-        const message = (err as Error)?.message ?? "";
-        const match =
-          /HTTP[_ ](\d{3})/.exec(message) || /HTTP (\d{3})/.exec(message);
-        const code = match?.[1] ?? (message === "UNAUTHORIZED" ? "401" : "");
-        setRankingLevel(`Falha ${code || "erro"}`);
-      }
-    };
-
-    if (me) {
-      loadRanking();
-    } else {
-      setRankingLevel("");
-    }
-
-    return () => {
-      active = false;
-    };
-  }, [me]);
 
   const userDisplayName = (() => {
     if (!me) return "";

@@ -132,6 +132,14 @@
   margin-top: 2px;
 }
 
+.perfilNextLevelLock {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #7a1d1d;
+  font-weight: 600;
+  text-align: left;
+}
+
 .perfilDivider {
   height: 1px;
   width: 100%;

@@ -45,12 +45,20 @@ type StatsApi = {
   level?: string | number;
   xp?: number;
   xpToNext?: number | null;
+  total_xp?: number;
+  games_completed?: number;
+  games_required_for_next?: number | null;
+  is_next_level_locked?: boolean;
 };
 
 type Stats = {
   level: string | number | null;
   xp: number;
   xpToNext: number | null;
+  totalXp: number;
+  gamesCompleted: number;
+  gamesRequiredForNext: number | null;
+  isNextLevelLocked: boolean;
 };
 
 type BadgeProgressTierApi = {
@@ -154,12 +162,28 @@ const parseStats = (raw?: StatsApi | null): Stats | null => {
   if (!raw) return null;
   const xp = Number(raw.xp);
   if (!Number.isFinite(xp)) return null;
+  const totalXp = Number(raw.total_xp ?? raw.xp);
+  if (!Number.isFinite(totalXp)) return null;
   const rawXpToNext = raw.xpToNext;
   const xpToNext =
     rawXpToNext === null || rawXpToNext === undefined
       ? null
       : Number(rawXpToNext);
   if (xpToNext !== null && !Number.isFinite(xpToNext)) return null;
+  const gamesCompleted = Number(raw.games_completed ?? 0);
+  if (!Number.isFinite(gamesCompleted)) return null;
+  const rawGamesRequiredForNext = raw.games_required_for_next;
+  const gamesRequiredForNext =
+    rawGamesRequiredForNext === null || rawGamesRequiredForNext === undefined
+      ? null
+      : Number(rawGamesRequiredForNext);
+  if (
+    gamesRequiredForNext !== null &&
+    !Number.isFinite(gamesRequiredForNext)
+  ) {
+    return null;
+  }
+  const isNextLevelLocked = Boolean(raw.is_next_level_locked);
   const rawLevel = raw.level;
   let level: string | number | null = null;
   if (typeof rawLevel === "string" && rawLevel.trim()) {
@@ -167,7 +191,18 @@ const parseStats = (raw?: StatsApi | null): Stats | null => {
   } else if (typeof rawLevel === "number" && Number.isFinite(rawLevel)) {
     level = rawLevel;
   }
-  return { level, xp, xpToNext };
+  return {
+    level,
+    xp,
+    xpToNext,
+    totalXp,
+    gamesCompleted: Math.max(0, Math.trunc(gamesCompleted)),
+    gamesRequiredForNext:
+      gamesRequiredForNext === null
+        ? null
+        : Math.max(0, Math.trunc(gamesRequiredForNext)),
+    isNextLevelLocked,
+  };
 };
 
 const asFiniteNumber = (value: unknown): number | null => {
@@ -392,6 +427,10 @@ export default function Progresso() {
   const level = stats?.level ?? null;
   const xp = stats?.xp ?? 0;
   const xpToNext = stats?.xpToNext ?? null;
+  const totalXp = stats?.totalXp ?? xp;
+  const gamesCompletedForLevel = stats?.gamesCompleted ?? 0;
+  const gamesRequiredForNext = stats?.gamesRequiredForNext ?? null;
+  const isNextLevelLocked = Boolean(stats?.isNextLevelLocked);
   const activeGames = gamesConcluidos.filter(
     (game) => game.progresso < 100
   ).length;
@@ -422,6 +461,10 @@ export default function Progresso() {
           level={level}
           xp={xp}
           xpToNext={xpToNext}
+          totalXp={totalXp}
+          gamesCompletedForLevel={gamesCompletedForLevel}
+          gamesRequiredForNext={gamesRequiredForNext}
+          isNextLevelLocked={isNextLevelLocked}
           activeGames={activeGames}
           completedGames={completedGames}
           isLoading={isLoading}
