@@ -312,6 +312,53 @@ class WordleHintUsage(models.Model):
         return f"{self.user.email} - {self.mission.title} - dica {self.hint_index}"
 
 
+class GamificationLevel(models.Model):
+    name = models.CharField(
+        max_length=32,
+        unique=True,
+        verbose_name="Nome do nivel",
+    )
+    position = models.PositiveSmallIntegerField(
+        unique=True,
+        verbose_name="Posicao",
+        validators=[MinValueValidator(1)],
+    )
+    min_xp = models.IntegerField(
+        default=0,
+        verbose_name="XP minimo",
+        validators=[MinValueValidator(0)],
+    )
+    min_completed_games = models.IntegerField(
+        default=0,
+        verbose_name="Games concluidos minimos",
+        validators=[MinValueValidator(0)],
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Ativo")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
+
+    class Meta:
+        verbose_name = "Nivel de Gamificacao"
+        verbose_name_plural = "Niveis de Gamificacao"
+        ordering = ["position", "min_xp", "id"]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(min_xp__gte=0),
+                name="chk_gamif_level_min_xp",
+            ),
+            models.CheckConstraint(
+                check=models.Q(min_completed_games__gte=0),
+                name="chk_gamif_level_min_games",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["is_active", "position"], name="idx_gamif_level_active_pos"),
+        ]
+
+    def __str__(self):
+        return f"{self.position}. {self.name}"
+
+
 class LeaderboardEntry(models.Model):
     SCOPE_CHOICES = [
         ("global", "Geral"),

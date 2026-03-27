@@ -140,6 +140,16 @@ def _calculate_user_total_xp(user) -> int:
     return max(0, int(earned or 0) - int(spent or 0))
 
 
+def _calculate_user_completed_games(user) -> int:
+    completed_games = (
+        GameProgress.objects.filter(user=user)
+        .filter(Q(completed_at__isnull=False) | Q(progress_percentage__gte=100))
+        .aggregate(total=Count("id"))
+        .get("total", 0)
+    )
+    return max(0, int(completed_games or 0))
+
+
 def _is_temporary_admin_request(request) -> bool:
     return is_temporary_admin(getattr(request, "user", None))
 
@@ -325,18 +335,21 @@ class UserStatsView(APIView):
     def get(self, request):
         # 1. Busca o total de pontos (ganhos - consumidos em dicas Wordle)
         total_xp = _calculate_user_total_xp(request.user)
+        completed_games = _calculate_user_completed_games(request.user)
 
-        # 2. Aplica a matematica de divisao de niveis (Bronze/Prata/Ouro)
-        stats = calculate_tier_progress(total_xp)
+        # 2. Aplica a regra configuravel de niveis (XP + games concluidos)
+        stats = calculate_tier_progress(total_xp, completed_games)
 
         # 3. Retorna para o Frontend
         return Response(
             {
-                "level": stats["level"],  # Ex: "Prata"
-                "xp": stats["xp"],  # Ex: 300 (dentro do Prata)
-                "xpToNext": stats["xpToNext"],  # Ex: 1000 (meta do Prata)
-                # Opcional: retornar o total se quiser mostrar em algum lugar
+                "level": stats["level"],
+                "xp": stats["xp"],
+                "xpToNext": stats["xpToNext"],
                 "total_xp": stats["total_xp"],
+                "games_completed": stats["games_completed"],
+                "games_required_for_next": stats["games_required_for_next"],
+                "is_next_level_locked": stats["is_next_level_locked"],
             },
             status=status.HTTP_200_OK,
         )
@@ -1364,6 +1377,16 @@ class LeaderboardMixin(APIView):
             int(item["user_id"]): int(item["total_points"] or 0)
             for item in totals_all_games
         }
+        completed_games_all_games = (
+            GameProgress.objects.filter(user_id__in=user_ids)
+            .filter(Q(completed_at__isnull=False) | Q(progress_percentage__gte=100))
+            .values("user_id")
+            .annotate(total_completed=Count("id"))
+        )
+        completed_games_all_games_map = {
+            int(item["user_id"]): int(item["total_completed"] or 0)
+            for item in completed_games_all_games
+        }
         badges_map = self._build_user_badges_map(
             user_ids=user_ids,
             request=request,
@@ -1381,7 +1404,14 @@ class LeaderboardMixin(APIView):
                 row["user_id"],
                 0,
             )
-            user_level = calculate_tier_progress(user_total_points_all_games).get("level", "")
+            user_completed_games_all_games = completed_games_all_games_map.get(
+                row["user_id"],
+                0,
+            )
+            user_level = calculate_tier_progress(
+                user_total_points_all_games,
+                user_completed_games_all_games,
+            ).get("level", "")
 
             payload.append({
                 "position": index,
