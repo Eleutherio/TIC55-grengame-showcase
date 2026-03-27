@@ -113,7 +113,6 @@ const createFetchMock = (avatarUrl = "https://cdn.example.com/avatar.png") => {
   };
 
   return vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
-    void init;
     const urlString = typeof url === "string" ? url : url.toString();
     if (urlString.includes("/auth/me/stats/")) {
       return Promise.resolve(progressResponse);
@@ -121,11 +120,11 @@ const createFetchMock = (avatarUrl = "https://cdn.example.com/avatar.png") => {
     if (urlString.includes("/gamification/badges/")) {
       return Promise.resolve(badgesResponse);
     }
-    if (urlString.includes("/auth/me/name/")) {
+    if (urlString.includes("/auth/update/")) {
+      if (init?.body instanceof FormData) {
+        return Promise.resolve(uploadResponse);
+      }
       return Promise.resolve(nameResponse);
-    }
-    if (urlString.includes("/auth/me/avatar/")) {
-      return Promise.resolve(uploadResponse);
     }
     if (urlString.includes("/auth/me/")) {
       return Promise.resolve(userResponse);
@@ -147,7 +146,7 @@ const mockCanvasContext = {
 
 describe("Perfil upload de avatar", () => {
   let fetchMock: ReturnType<typeof createFetchMock>;
-  let toDataURLSpy: ReturnType<typeof vi.spyOn>;
+  let toBlobSpy: ReturnType<typeof vi.spyOn>;
   let getContextSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -163,16 +162,20 @@ describe("Perfil upload de avatar", () => {
     if (!("getContext" in canvasProto)) {
       canvasProto.getContext = () => null;
     }
-    if (!("toDataURL" in canvasProto)) {
-      canvasProto.toDataURL = () => "data:image/png;base64,placeholder";
+    if (!("toBlob" in canvasProto)) {
+      canvasProto.toBlob = (callback: BlobCallback) => {
+        callback(new Blob(["avatar"], { type: "image/png" }));
+      };
     }
 
     getContextSpy = vi
       .spyOn(canvasProto as unknown as HTMLCanvasElement, "getContext")
       .mockReturnValue(mockCanvasContext as unknown as CanvasRenderingContext2D) as unknown as ReturnType<typeof vi.spyOn>;
-    toDataURLSpy = vi
-      .spyOn(canvasProto as unknown as HTMLCanvasElement, "toDataURL")
-      .mockReturnValue("data:image/png;base64,cropped") as unknown as ReturnType<typeof vi.spyOn>;
+    toBlobSpy = vi
+      .spyOn(canvasProto as unknown as HTMLCanvasElement, "toBlob")
+      .mockImplementation((callback: BlobCallback | null) => {
+        callback?.(new Blob(["avatar"], { type: "image/png" }));
+      }) as unknown as ReturnType<typeof vi.spyOn>;
 
     mockNavigate.mockReset();
   });
@@ -202,16 +205,17 @@ describe("Perfil upload de avatar", () => {
     const file = new File(["avatar"], "avatar.png", { type: "image/png" });
     fireEvent.change(fileInput, { target: { files: [file] } });
 
-    await renderResult.findByAltText("Pre-visualizacao do avatar");
+    await renderResult.findByAltText(/visualização do avatar/i);
 
     await user.click(renderResult.getByRole("button", { name: /salvar foto/i }));
 
     await waitFor(() => {
       const avatarCalls = fetchMock.mock.calls.filter(([url]) =>
-        url.toString().includes("/auth/me/avatar/")
+        url.toString().includes("/auth/update/")
       );
       expect(avatarCalls.length).toBe(1);
-      expect(avatarCalls[0]?.[1]).toMatchObject({ method: "POST" });
+      expect(avatarCalls[0]?.[1]).toMatchObject({ method: "PUT" });
+      expect(avatarCalls[0]?.[1]?.body).toBeInstanceOf(FormData);
     });
 
     await waitFor(() => {
@@ -220,7 +224,7 @@ describe("Perfil upload de avatar", () => {
 
     expect(renderResult.queryByText(/Salvar foto/i)).toBeNull();
     expect(getContextSpy).toHaveBeenCalled();
-    expect(toDataURLSpy).toHaveBeenCalled();
+    expect(toBlobSpy).toHaveBeenCalled();
   });
 
   it("exibe erro ao selecionar formato invalido", async () => {
@@ -237,7 +241,7 @@ describe("Perfil upload de avatar", () => {
     expect(await renderResult.findByText(/Formatos aceitos/i)).toBeTruthy();
     await waitFor(() => {
       const avatarCalls = fetchMock.mock.calls.filter(([url]) =>
-        url.toString().includes("/auth/me/avatar/")
+        url.toString().includes("/auth/update/")
       );
       expect(avatarCalls.length).toBe(0);
     });
@@ -258,10 +262,11 @@ describe("Perfil upload de avatar", () => {
 
     await waitFor(() => {
       const nameCalls = fetchMock.mock.calls.filter(([url]) =>
-        url.toString().includes("/auth/me/name/")
+        url.toString().includes("/auth/update/")
       );
       expect(nameCalls.length).toBe(1);
       expect(nameCalls[0]?.[1]).toMatchObject({ method: "PUT" });
+      expect(nameCalls[0]?.[1]?.body).not.toBeInstanceOf(FormData);
     });
 
     await waitFor(() => {
@@ -287,7 +292,7 @@ describe("Perfil upload de avatar", () => {
       await renderResult.findByText(/Use um nome entre 2 e 100 caracteres/)
     ).toBeTruthy();
     const nameCalls = fetchMock.mock.calls.filter(([url]) =>
-      url.toString().includes("/auth/me/name/")
+      url.toString().includes("/auth/update/")
     );
     expect(nameCalls.length).toBe(0);
   });
@@ -306,9 +311,9 @@ describe("Perfil upload de avatar", () => {
         nivel: "Nivel 1",
       }),
     };
-    const uploadResponse: FetchResponse = {
+    const statsResponse: FetchResponse = {
       ok: true,
-      json: async () => ({ avatar_url: "https://cdn.example.com/avatar.png" }),
+      json: async () => ({ level: "Bronze", xp: 120, xpToNext: 500 }),
     };
     const unauthorized: FetchResponse = {
       ok: false,
@@ -316,9 +321,9 @@ describe("Perfil upload de avatar", () => {
       json: async () => ({}),
     };
 
-    fetchMock.mockImplementation((url: RequestInfo | URL) => {
+    fetchMock.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const urlString = typeof url === "string" ? url : url.toString();
-      if (urlString.includes("/auth/me/name/")) {
+      if (urlString.includes("/auth/update/") && !(init?.body instanceof FormData)) {
         return Promise.resolve(unauthorized);
       }
       if (urlString.includes("/gamification/badges/")) {
@@ -327,8 +332,8 @@ describe("Perfil upload de avatar", () => {
           json: async () => [],
         });
       }
-      if (urlString.includes("/auth/me/avatar/")) {
-        return Promise.resolve(uploadResponse);
+      if (urlString.includes("/auth/me/stats/")) {
+        return Promise.resolve(statsResponse);
       }
       if (urlString.includes("/auth/me/")) {
         return Promise.resolve(userResponse);
