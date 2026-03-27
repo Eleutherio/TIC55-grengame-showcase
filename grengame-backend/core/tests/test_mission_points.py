@@ -2,7 +2,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
-from core.models import Game, Mission, MissionCompletions
+from core.models import Game, Mission, MissionCompletions, WordleHintUsage
 
 User = get_user_model()
 
@@ -318,6 +318,93 @@ class TestWordlePoints:
             format='json'
         )
         assert response2.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+class TestWordleHintsCost:
+
+    def test_first_hint_is_free_and_second_costs_points(
+        self,
+        authenticated_client,
+        create_wordle_mission,
+    ):
+        client, user = authenticated_client()
+        mission = create_wordle_mission(points=100, word='CICLO')
+        mission.content_data = {
+            'word': 'CICLO',
+            'max_attempts': 6,
+            'hints': ['Começa com C', 'Tem duas vogais'],
+        }
+        mission.save(update_fields=['content_data'])
+
+        client.post(f'/auth/missoes/{mission.id}/iniciar/')
+        client.post(
+            f'/auth/missoes/{mission.id}/validar/',
+            {'word': 'CICLO'},
+            format='json',
+        )
+
+        first_hint = client.post(
+            f'/auth/missoes/{mission.id}/wordle/hints/use/',
+            {'hint_index': 0},
+            format='json',
+        )
+        assert first_hint.status_code == status.HTTP_200_OK
+        assert first_hint.data['points_charged'] == 0
+
+        second_hint = client.post(
+            f'/auth/missoes/{mission.id}/wordle/hints/use/',
+            {'hint_index': 1},
+            format='json',
+        )
+        assert second_hint.status_code == status.HTTP_200_OK
+        assert second_hint.data['points_charged'] == 10
+
+        usages = WordleHintUsage.objects.filter(user=user, mission=mission).order_by('hint_index')
+        assert usages.count() == 2
+        assert usages[0].is_free is True
+        assert usages[1].points_spent == 10
+
+        stats_response = client.get('/auth/me/stats/')
+        assert stats_response.status_code == status.HTTP_200_OK
+        assert stats_response.data['total_xp'] == 90
+
+    def test_second_paid_hint_requires_available_points(
+        self,
+        authenticated_client,
+        create_wordle_mission,
+    ):
+        client, user = authenticated_client()
+        mission = create_wordle_mission(points=5, word='CICLO')
+        mission.content_data = {
+            'word': 'CICLO',
+            'max_attempts': 6,
+            'hints': ['Começa com C', 'Termina com O'],
+        }
+        mission.save(update_fields=['content_data'])
+
+        client.post(f'/auth/missoes/{mission.id}/iniciar/')
+        client.post(
+            f'/auth/missoes/{mission.id}/validar/',
+            {'word': 'CICLO'},
+            format='json',
+        )
+
+        first_hint = client.post(
+            f'/auth/missoes/{mission.id}/wordle/hints/use/',
+            {'hint_index': 0},
+            format='json',
+        )
+        assert first_hint.status_code == status.HTTP_200_OK
+        assert first_hint.data['points_charged'] == 0
+
+        second_hint = client.post(
+            f'/auth/missoes/{mission.id}/wordle/hints/use/',
+            {'hint_index': 1},
+            format='json',
+        )
+        assert second_hint.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'insuficientes' in second_hint.data['error'].lower()
 
 
 # ========== TESTES DE VIDEO E LEITURA ==========
