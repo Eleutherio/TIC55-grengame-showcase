@@ -41,6 +41,19 @@ def regular_user(db):
 
 
 @pytest.fixture
+def temporary_admin_user(db):
+    return User.objects.create_user(
+        username="temp_admin",
+        email="temp.admin@example.com",
+        password="temp123",
+        first_name="Temp",
+        last_name="Admin",
+        role="admin",
+        is_temporary_account=True,
+    )
+
+
+@pytest.fixture
 def authenticated_admin_client(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     return api_client
@@ -49,6 +62,12 @@ def authenticated_admin_client(api_client, admin_user):
 @pytest.fixture
 def authenticated_user_client(api_client, regular_user):
     api_client.force_authenticate(user=regular_user)
+    return api_client
+
+
+@pytest.fixture
+def authenticated_temporary_admin_client(api_client, temporary_admin_user):
+    api_client.force_authenticate(user=temporary_admin_user)
     return api_client
 
 
@@ -74,6 +93,15 @@ class TestDashboardActiveUsersEndpoint:
         assert 'usuarios_ativos_mes' in response.data
         assert response.data['usuarios_ativos_semana'] >= 1
         assert response.data['usuarios_ativos_mes'] >= 1
+
+    def test_temporary_admin_has_dashboard_access(
+        self,
+        authenticated_temporary_admin_client,
+    ):
+        response = authenticated_temporary_admin_client.get(
+            '/auth/dashboard/usuarios-ativos/'
+        )
+        assert response.status_code == status.HTTP_200_OK
 
 
 @pytest.mark.django_db
