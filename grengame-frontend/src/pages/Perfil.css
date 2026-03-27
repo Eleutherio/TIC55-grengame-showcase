@@ -265,6 +265,13 @@
   color: #5b5563;
 }
 
+.levelLockInfo {
+  margin: 0;
+  font-size: 12px;
+  color: #7a1d1d;
+  font-weight: 600;
+}
+
 .xpBar {
   position: relative;
   width: 100%;

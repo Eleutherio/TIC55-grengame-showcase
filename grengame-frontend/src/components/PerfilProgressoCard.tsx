@@ -6,6 +6,10 @@ type PerfilProgressoCardProps = {
   level: string | number | null;
   xp: number;
   xpToNext: number | null;
+  totalXp?: number | null;
+  gamesCompletedForLevel?: number | null;
+  gamesRequiredForNext?: number | null;
+  isNextLevelLocked?: boolean;
   activeGames?: number | null;
   completedGames?: number | null;
   isLoading: boolean;
@@ -21,6 +25,10 @@ export default function PerfilProgressoCard({
   level,
   xp,
   xpToNext,
+  totalXp = null,
+  gamesCompletedForLevel = null,
+  gamesRequiredForNext = null,
+  isNextLevelLocked = false,
   activeGames = null,
   completedGames = null,
   isLoading,
@@ -34,27 +42,42 @@ export default function PerfilProgressoCard({
     xpToNext === null
       ? 100
       : typeof xpToNext === "number"
-      ? xp + xpToNext
-      : 0;
+        ? xp + xpToNext
+        : 0;
   const progressPercent =
     xpToNext === null
       ? 100
       : xpMax > 0
-      ? Math.min(100, Math.max(0, (xp / xpMax) * 100))
-      : 0;
+        ? Math.min(100, Math.max(0, (xp / xpMax) * 100))
+        : 0;
   const xpLabel =
     xpToNext === null
       ? `${xp} XP no nível máximo`
       : `${xp}/${xpMax || "Indefinido"} XP para o próximo nível`;
+  const displayedTotalXp =
+    totalXp === null || Number.isNaN(totalXp) ? xp : Number(totalXp);
   const initial = fullName?.trim()?.charAt(0)?.toUpperCase() || "?";
   const activeLabel =
-    activeGames === null || Number.isNaN(activeGames)
-      ? "--"
-      : String(activeGames);
+    activeGames === null || Number.isNaN(activeGames) ? "--" : String(activeGames);
+  const completedGamesForLevelValue =
+    gamesCompletedForLevel === null || Number.isNaN(gamesCompletedForLevel)
+      ? completedGames === null || Number.isNaN(completedGames)
+        ? 0
+        : Number(completedGames)
+      : Number(gamesCompletedForLevel);
   const completedLabel =
     completedGames === null || Number.isNaN(completedGames)
       ? "--"
       : String(completedGames);
+  const gamesMissingForNext =
+    gamesRequiredForNext === null || Number.isNaN(gamesRequiredForNext)
+      ? 0
+      : Math.max(0, Number(gamesRequiredForNext) - completedGamesForLevelValue);
+  const shouldShowNextLevelLockNote =
+    Boolean(isNextLevelLocked) &&
+    gamesRequiredForNext !== null &&
+    !Number.isNaN(gamesRequiredForNext) &&
+    gamesMissingForNext > 0;
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (!onActivate) return;
@@ -126,15 +149,20 @@ export default function PerfilProgressoCard({
             <span>Progresso do Nível</span>
             <strong>{Math.round(progressPercent)}%</strong>
           </div>
+          {shouldShowNextLevelLockNote && (
+            <p className="perfilNextLevelLock">
+              Faltam {gamesMissingForNext} games completos para o próximo nível.
+            </p>
+          )}
           <div className="perfilDivider" aria-hidden="true" />
           <div className="perfilStatsGrid">
             <div className="perfilStatCard">
               <span className="statIcon">★</span>
-              <div className="statValue">{xp}</div>
+              <div className="statValue">{displayedTotalXp}</div>
               <div className="statLabel">XP Total</div>
             </div>
             <div className="perfilStatCard">
-              <span className="statIcon target">◎</span>
+              <span className="statIcon target">◍</span>
               <div className="statValue">{activeLabel}</div>
               <div className="statLabel">Games Ativos</div>
             </div>
@@ -154,9 +182,3 @@ export default function PerfilProgressoCard({
     </section>
   );
 }
-
-
-
-
-
-

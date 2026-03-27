@@ -345,6 +345,10 @@ type Progress = {
   level: string | number;
   xp: number;
   xpToNext: number | null;
+  totalXp: number;
+  gamesCompleted: number;
+  gamesRequiredForNext: number | null;
+  isNextLevelLocked: boolean;
 };
 
 async function updateUserNameApi(
@@ -450,6 +454,10 @@ async function fetchUserProgress(): Promise<Progress> {
   if (!Number.isFinite(xp)) {
     throw new Error("REQUEST_FAILED");
   }
+  const totalXp = Number(data?.total_xp ?? data?.xp);
+  if (!Number.isFinite(totalXp)) {
+    throw new Error("REQUEST_FAILED");
+  }
   const rawXpToNext = data?.xpToNext;
   const xpToNext =
     rawXpToNext === null || rawXpToNext === undefined
@@ -458,6 +466,19 @@ async function fetchUserProgress(): Promise<Progress> {
   if (xpToNext !== null && !Number.isFinite(xpToNext)) {
     throw new Error("REQUEST_FAILED");
   }
+  const gamesCompleted = Number(data?.games_completed ?? 0);
+  if (!Number.isFinite(gamesCompleted)) {
+    throw new Error("REQUEST_FAILED");
+  }
+  const rawGamesRequiredForNext = data?.games_required_for_next;
+  const gamesRequiredForNext =
+    rawGamesRequiredForNext === null || rawGamesRequiredForNext === undefined
+      ? null
+      : Number(rawGamesRequiredForNext);
+  if (gamesRequiredForNext !== null && !Number.isFinite(gamesRequiredForNext)) {
+    throw new Error("REQUEST_FAILED");
+  }
+  const isNextLevelLocked = Boolean(data?.is_next_level_locked);
   const rawLevel = data?.level;
   let level: string | number = "Indefinido";
   if (typeof rawLevel === "string" && rawLevel.trim()) {
@@ -465,7 +486,18 @@ async function fetchUserProgress(): Promise<Progress> {
   } else if (typeof rawLevel === "number" && Number.isFinite(rawLevel)) {
     level = rawLevel;
   }
-  return { level, xp, xpToNext };
+  return {
+    level,
+    xp,
+    xpToNext,
+    totalXp,
+    gamesCompleted: Math.max(0, Math.trunc(gamesCompleted)),
+    gamesRequiredForNext:
+      gamesRequiredForNext === null
+        ? null
+        : Math.max(0, Math.trunc(gamesRequiredForNext)),
+    isNextLevelLocked,
+  };
 }
 
 const normalizeBadgeEarned = (value: unknown) => {
@@ -1283,7 +1315,18 @@ export default function Perfil() {
 
   const progressLevelLabel = progress?.level ?? "-";
   const xpValue = progress?.xp ?? 0;
+  const totalXpValue = progress?.totalXp ?? xpValue;
   const xpRemaining = progress?.xpToNext;
+  const gamesCompleted = progress?.gamesCompleted ?? 0;
+  const gamesRequiredForNext = progress?.gamesRequiredForNext ?? null;
+  const gamesMissingForNext =
+    gamesRequiredForNext === null
+      ? 0
+      : Math.max(0, gamesRequiredForNext - gamesCompleted);
+  const showLevelLockMessage =
+    Boolean(progress?.isNextLevelLocked) &&
+    gamesRequiredForNext !== null &&
+    gamesMissingForNext > 0;
   const xpMax =
     xpRemaining === null
       ? 100
@@ -1394,7 +1437,7 @@ export default function Perfil() {
                   </span>
                 </div>
                 <div className="xpInfo">
-                  <span>{xpValue} XP</span>
+                  <span>Total: {totalXpValue} XP</span>
                   <span>
                     Próximo nível:{" "}
                     {xpRemaining === null
@@ -1422,6 +1465,11 @@ export default function Perfil() {
                     }}
                   />
                 </div>
+                {showLevelLockMessage && (
+                  <p className="levelLockInfo">
+                    Faltam {gamesMissingForNext} games completos para o prÃ³ximo nÃ­vel.
+                  </p>
+                )}
                 {progressError && (
                   <p className="uploadError">{progressError}</p>
                 )}
