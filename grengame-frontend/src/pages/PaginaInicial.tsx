@@ -241,6 +241,13 @@ export default function PaginaInicial() {
   const menuButtons = isAdmin
     ? [
         {
+          to: "/app/cursos",
+          title: "Games Disponíveis",
+          subtitle: "Visualize todos os games",
+          icon: playIcon,
+          ariaLabel: "Ir para Games Disponíveis",
+        },
+        {
           to: "/app/AdministrarGames",
           title: "Administrar Games",
           subtitle: "Gerencie os games disponíveis",
@@ -253,13 +260,6 @@ export default function PaginaInicial() {
           subtitle: "Organize missões e desafios",
           icon: medalIcon,
           ariaLabel: "Ir para Administrar Missões",
-        },
-        {
-          to: "/app/AdministrarBadges",
-          title: "Administrar Badges",
-          subtitle: "Configure badges e critérios",
-          icon: medalIcon,
-          ariaLabel: "Ir para Administrar Badges",
         },
         {
           to: "/app/AdministrarUsuarios",
