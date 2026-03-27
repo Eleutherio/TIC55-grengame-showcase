@@ -995,26 +995,203 @@
 }
 
 @media (max-width: 980px) {
+  .missions-admin,
+  .missions-shell,
+  .missions-header,
+  .missions-grid,
+  .panel-left,
+  .panel-right,
+  .card,
+  .game-selector,
+  .game-selector-row,
+  .mission-panel,
+  .mission-form,
+  .form-grid,
+  .form-field {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .input-field,
+  .form-field input,
+  .form-field textarea,
+  .quiz-option-row input[type="text"],
+  .quiz-points input {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .helper-text,
+  .field-error,
+  .mission-text strong,
+  .mission-meta {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .missions-admin {
+    padding: 2rem 1.25rem 2.4rem;
+  }
+
+  .missions-shell {
+    padding: 1.6rem 1.2rem;
+    gap: 1.4rem;
+  }
+
   .missions-header {
     grid-template-columns: 1fr;
+    gap: 1.2rem;
   }
 
   .missions-grid {
     grid-template-columns: 1fr;
+    gap: 1.2rem;
   }
 
   .mission-panel {
     min-height: auto;
   }
+
+  .card {
+    padding: 1.25rem;
+  }
+
+  .missions-actions {
+    justify-content: flex-start;
+    margin-top: 0.5rem;
+  }
+
+  .missions-actions--right {
+    align-self: stretch;
+  }
+
+  .card-title-row {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 768px) {
+  .missions-admin {
+    padding: 1.5rem 1rem 2rem;
+  }
+
+  .missions-shell {
+    border-radius: 0.9rem;
+    padding: 1.2rem 0.95rem;
+  }
+
+  .header-title {
+    font-size: 1.6rem;
+    line-height: 1.2;
+  }
+
+  .header-subtitle {
+    font-size: 0.92rem;
+  }
+
+  .card {
+    border-radius: 16px;
+    padding: 1.1rem;
+  }
+
+  .mission-panel {
+    align-items: stretch;
+  }
+
+  .mission-empty {
+    max-width: none;
+  }
+
+  .type-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .game-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .mission-info {
+    align-items: flex-start;
+  }
+
+  .mission-text strong {
+    word-break: break-word;
+  }
+
+  .game-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .mission-edit-button,
+  .mission-delete-button {
+    min-height: 34px;
+  }
+
+  .form-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .type-pill {
+    align-self: flex-start;
+  }
+
+  .quiz-builder-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .quiz-add-button {
+    width: 100%;
+    text-align: center;
+  }
+
+  .reading-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .reading-controls .form-field {
+    width: 100%;
+  }
+
+  .reading-controls .btn-ghost {
+    width: 100%;
+    height: auto;
+  }
+
+  .mission-delete-actions,
+  .mission-finish-actions {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .mission-delete-confirm,
+  .mission-delete-cancel,
+  .mission-finish-secondary,
+  .mission-finish-primary {
+    width: 100%;
+  }
 }
 
 @media (max-width: 640px) {
   .missions-admin {
-    padding: 2rem 1rem;
+    padding: 1.25rem 0.75rem 1.8rem;
   }
 
   .missions-shell {
-    padding: 1.5rem 1rem;
+    padding: 1rem 0.75rem;
+    border-radius: 0.8rem;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
   }
 
   .game-selector-row {
@@ -1034,4 +1211,77 @@
     align-items: stretch;
   }
 
+  .form-actions .btn-ghost,
+  .form-actions .btn-primary {
+    width: 100%;
+  }
+
+  .missions-actions .header-button {
+    width: 100%;
+  }
+
+  .mission-delete-backdrop {
+    padding: 1rem;
+  }
+
+  .mission-delete-card,
+  .mission-finish-card {
+    border-radius: 14px;
+    padding: 1rem;
+    gap: 0.9rem;
+  }
+
+  .quiz-card {
+    border-radius: 14px;
+    padding: 1.2rem 0.8rem 0.85rem;
+  }
+
+  .quiz-remove-button {
+    width: 34px;
+    height: 34px;
+    top: 0.55rem;
+    right: 0.55rem;
+    border-radius: 10px;
+  }
+
+  .quiz-option-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.55rem;
+  }
+
+  .mission-edit-button,
+  .mission-delete-button {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  .header-title {
+    font-size: 1.4rem;
+  }
+
+  .header-subtitle {
+    font-size: 0.86rem;
+  }
+
+  .card {
+    padding: 0.95rem;
+  }
+
+  .pill {
+    font-size: 0.68rem;
+  }
+
+  .mission-order {
+    font-size: 0.64rem;
+  }
+
+  .input-field,
+  .form-field input,
+  .form-field textarea,
+  .quiz-option-row input[type="text"],
+  .quiz-points input {
+    font-size: 16px;
+  }
 }

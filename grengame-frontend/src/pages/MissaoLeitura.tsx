@@ -96,6 +96,13 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
   }, [hasReadAll, isCompleted]);
 
   useEffect(() => {
+    if (isCompleted) {
+      setHasReadAll(true);
+      setHasScrolledToEnd(true);
+    }
+  }, [isCompleted]);
+
+  useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);

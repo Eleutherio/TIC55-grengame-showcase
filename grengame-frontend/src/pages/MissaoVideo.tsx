@@ -70,6 +70,12 @@ export default function MissaoVideo({ mission, onComplete, isCompleted, completi
   const isLastMission = totalMissions > 0 && mission.order >= totalMissions;
 
   useEffect(() => {
+    if (isCompleted) {
+      setVideoWatched(true);
+    }
+  }, [isCompleted]);
+
+  useEffect(() => {
     if (!videoId) return;
 
     const timeout = setTimeout(() => {
@@ -256,7 +262,7 @@ export default function MissaoVideo({ mission, onComplete, isCompleted, completi
           overflow: "hidden",
         }}>
           <div style={{
-            width: videoWatched ? "100%" : "60%",
+            width: videoWatched || isCompleted ? "100%" : "60%",
             height: "100%",
             backgroundColor: "#FFC107",
             transition: "width 0.5s ease",

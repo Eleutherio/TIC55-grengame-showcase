@@ -6,6 +6,7 @@ import MissaoQuiz from "./MissaoQuiz";
 import MissaoWordle from "./MissaoWordle";
 import "./Missao.css";
 import { API_URL } from "../config/api";
+import { notifyUserDataUpdated } from "../utils/auth";
 
 type MissionType = "video" | "reading" | "quiz" | "game";
 
@@ -188,6 +189,7 @@ export default function Missao() {
         stars_earned: 3,
         completed_at: new Date().toISOString(),
       });
+      notifyUserDataUpdated();
 
       const trailResponse = await fetch(`${API_URL}/auth/games/${mission?.game}/trilha/`, {
         headers: {
