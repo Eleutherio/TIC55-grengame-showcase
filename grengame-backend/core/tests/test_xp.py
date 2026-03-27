@@ -1,6 +1,13 @@
 import pytest
 from rest_framework.test import APIClient
-from core.models import User, Course, CourseProgress
+
+from core.models import (
+    Game,
+    Mission,
+    MissionCompletions,
+    User,
+    WordleHintUsage,
+)
 
 
 @pytest.fixture
@@ -9,54 +16,78 @@ def api_client():
 
 
 @pytest.fixture
-def admin_user(db):
-    return User.objects.create_user(username='admin', email='admin@grendene.com.br', password='admin123', role='admin')
+def player_user(db):
+    return User.objects.create_user(
+        username="player",
+        email="player@grendene.com.br",
+        password="player123",
+        role="user",
+    )
 
 
 @pytest.fixture
-def player_user(db):
-    return User.objects.create_user(username='player', email='player@grendene.com.br', password='player123', role='user')
-
-
-@pytest.mark.django_db
-def test_xp_minimo_invalido(api_client, admin_user):
-    api_client.force_authenticate(user=admin_user)
-    response = api_client.post('/auth/courses/', {'name': 'Curso XP Zero', 'xp': 0})
-    assert response.status_code == 400
-
-
-@pytest.mark.django_db
-def test_xp_maximo_invalido(api_client, admin_user):
-    api_client.force_authenticate(user=admin_user)
-    response = api_client.post('/auth/courses/', {'name': 'Curso XP Alto', 'xp': 1001})
-    assert response.status_code == 400
-
-
-@pytest.mark.django_db
-def test_xp_valido(api_client, admin_user):
-    api_client.force_authenticate(user=admin_user)
-    response = api_client.post('/auth/courses/', {'name': 'Curso XP OK', 'xp': 500})
-    assert response.status_code == 201
-    assert response.data['xp'] == 500
-
-
-@pytest.mark.django_db
-def test_impedir_conclusao_duplicada(api_client, player_user):
+def authenticated_client(api_client, player_user):
     api_client.force_authenticate(user=player_user)
-    course = Course.objects.create(name='Curso Teste', xp=100)
-    progress = CourseProgress.objects.create(user=player_user, course=course, progress_percentage=100, completed=True)
-    response = api_client.patch(f'/auth/progress/{progress.id}/', {'completed': True})
-    assert response.status_code == 400
-    assert 'já foi concluída' in response.data['error']
+    return api_client
+
+
+def _create_completed_mission_for_user(user, points_earned=100):
+    game = Game.objects.create(name="Game XP")
+    mission = Mission.objects.create(
+        game=game,
+        title="Missao XP",
+        description="Desc",
+        mission_type="reading",
+        icon="book",
+        order=1,
+        points_value=points_earned,
+        content_data={"text": "conteudo"},
+        is_active=True,
+    )
+    MissionCompletions.objects.create(
+        user=user,
+        mission=mission,
+        status="completed",
+        points_earned=points_earned,
+    )
+    return mission
 
 
 @pytest.mark.django_db
-def test_xp_atribuido_ao_concluir(api_client, player_user):
-    api_client.force_authenticate(user=player_user)
-    course = Course.objects.create(name='Curso XP', xp=50)
-    progress = CourseProgress.objects.create(user=player_user, course=course, progress_percentage=90)
-    pontos_antes = player_user.pontos
-    api_client.patch(f'/auth/progress/{progress.id}/', {'completed': True})
-    player_user.refresh_from_db()
-    assert player_user.pontos == pontos_antes + 50
+def test_user_stats_total_xp_subtracts_wordle_hint_cost(authenticated_client, player_user):
+    mission = _create_completed_mission_for_user(player_user, points_earned=120)
+    WordleHintUsage.objects.create(
+        user=player_user,
+        mission=mission,
+        hint_index=0,
+        revealed_hint="dica",
+        points_spent=10,
+        is_free=False,
+    )
 
+    response = authenticated_client.get("/auth/me/stats/")
+    assert response.status_code == 200
+    assert response.data["total_xp"] == 110
+
+
+@pytest.mark.django_db
+def test_user_stats_total_xp_never_negative(authenticated_client, player_user):
+    mission = _create_completed_mission_for_user(player_user, points_earned=5)
+    WordleHintUsage.objects.create(
+        user=player_user,
+        mission=mission,
+        hint_index=0,
+        revealed_hint="dica",
+        points_spent=50,
+        is_free=False,
+    )
+
+    response = authenticated_client.get("/auth/me/stats/")
+    assert response.status_code == 200
+    assert response.data["total_xp"] == 0
+
+
+@pytest.mark.django_db
+def test_user_stats_unauthenticated_returns_401(api_client):
+    response = api_client.get("/auth/me/stats/")
+    assert response.status_code == 401

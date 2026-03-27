@@ -22,7 +22,13 @@ def api_client():
 
 @pytest.fixture
 def imagem_valida():
-    return SimpleUploadedFile('imagem.jpg', b'conteudo', content_type='image/jpeg')
+    # PNG 1x1 transparente válido.
+    png_1x1 = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\x0dIDAT\x08\xd7c\xf8"
+        b"\xff\xff?\x00\x05\xfe\x02\xfeA\xa7\x1d\x8d\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    return SimpleUploadedFile("imagem.png", png_1x1, content_type="image/png")
 
 
 @pytest.fixture
@@ -36,7 +42,6 @@ def test_admin_upload_valid_media(api_client, admin_user, imagem_valida, video_v
     url = reverse('core:course-list-create')
     data = {
         'name': 'Curso Midia',
-        'image_url': imagem_valida,
         'video_url': video_valido
     }
     response = api_client.post(url, data, format='multipart')

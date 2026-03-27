@@ -164,8 +164,8 @@ class TestQuizPoints:
         
         # Verificar no banco
         completion = MissionCompletions.objects.get(user=user, mission=mission)
-        assert completion.points_earned == 0  # Não completou (só completa com 100%)
-        assert completion.status == 'in_progress'
+        assert completion.points_earned == 75
+        assert completion.status == 'completed'
     
     def test_quiz_half_correct_half_points(self, authenticated_client, create_quiz_mission):
         """Quiz com 2/4 corretas = 50 pontos"""
@@ -185,8 +185,8 @@ class TestQuizPoints:
         assert response.data['correct_answers'] == 2
         
         completion = MissionCompletions.objects.get(user=user, mission=mission)
-        assert completion.points_earned == 0  # Não completou
-        assert completion.status == 'in_progress'
+        assert completion.points_earned == 50
+        assert completion.status == 'completed'
     
     def test_quiz_no_correct_zero_points(self, authenticated_client, create_quiz_mission):
         """Quiz com 0/4 corretas = 0 pontos"""

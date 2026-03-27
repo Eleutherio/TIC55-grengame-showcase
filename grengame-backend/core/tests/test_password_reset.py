@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
 from django.utils import timezone
+from django.core.cache import cache
 from datetime import timedelta
 from core.models import PasswordResetToken
 
@@ -25,6 +26,11 @@ def create_user(db):
         )
         return user
     return make_user
+
+
+@pytest.fixture(autouse=True)
+def clear_throttle_cache():
+    cache.clear()
 
 
 @pytest.mark.django_db
