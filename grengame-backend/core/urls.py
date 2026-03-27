@@ -19,6 +19,7 @@ from .views import (
     MissionCompletionsStartView,
     MissionCompletionsCompleteView,
     MissionValidateView,
+    MissionWordleHintUseView,
     GlobalLeaderboardView,
     CourseLeaderboardView,
     CourseTrailView,
@@ -79,6 +80,7 @@ urlpatterns = [
     path('missoes/<int:mission_id>/iniciar/', MissionCompletionsStartView.as_view(), name='mission-completions-start'),
     path('missoes/<int:mission_id>/completar/', MissionCompletionsCompleteView.as_view(), name='mission-completions-complete'),
     path('missoes/<int:mission_id>/validar/', MissionValidateView.as_view(), name='mission-validate'),
+    path('missoes/<int:mission_id>/wordle/hints/use/', MissionWordleHintUseView.as_view(), name='mission-wordle-hint-use'),
 
     path('ranking/', GlobalLeaderboardView.as_view(), name='ranking-global'),
     path('games/<int:game_id>/ranking/', CourseLeaderboardView.as_view(), name='ranking-course'),

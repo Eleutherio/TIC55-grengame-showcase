@@ -269,6 +269,49 @@ class MissionCompletions(models.Model):
         return f"{self.user.email} - {self.mission.title} ({self.status})"
 
 
+class WordleHintUsage(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="wordle_hint_usages",
+        verbose_name="Usuário",
+    )
+    mission = models.ForeignKey(
+        Mission,
+        on_delete=models.CASCADE,
+        related_name="wordle_hint_usages",
+        verbose_name="Missão",
+    )
+    hint_index = models.PositiveIntegerField(verbose_name="Índice da dica")
+    revealed_hint = models.TextField(blank=True, default="", verbose_name="Dica revelada")
+    points_spent = models.IntegerField(
+        default=0,
+        verbose_name="Pontos consumidos",
+        validators=[MinValueValidator(0)],
+    )
+    is_free = models.BooleanField(default=False, verbose_name="Uso gratuito")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+
+    class Meta:
+        verbose_name = "Uso de dica Wordle"
+        verbose_name_plural = "Usos de dicas Wordle"
+        ordering = ["-created_at"]
+        db_table = "core_wordlehintusage"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "mission", "hint_index"],
+                name="unique_wordle_hint_usage",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user", "mission"], name="idx_hint_user_mission"),
+            models.Index(fields=["user", "created_at"], name="idx_hint_user_created"),
+        ]
+
+    def __str__(self):
+        return f"{self.user.email} - {self.mission.title} - dica {self.hint_index}"
+
+
 class LeaderboardEntry(models.Model):
     SCOPE_CHOICES = [
         ("global", "Geral"),

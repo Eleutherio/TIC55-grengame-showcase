@@ -48,6 +48,7 @@ from .models import (
     LeaderboardEntry,
     Mission,
     MissionCompletions,
+    WordleHintUsage,
     UserBadgeUnlock,
 )
 from .tokens import CustomRefreshToken
@@ -85,6 +86,7 @@ BADGE_CRITERION_LABELS = {
     "perfect_missions": "Perfeccionista",
     "active_days": "Ritmo Constante",
 }
+WORDLE_HINT_COST_POINTS = 10
 
 
 def _resolve_uploaded_file_url(request, raw_value):
@@ -122,6 +124,20 @@ def _resolve_uploaded_file_url(request, raw_value):
     if request is not None:
         return request.build_absolute_uri(fallback_relative)
     return fallback_relative
+
+
+def _calculate_user_total_xp(user) -> int:
+    earned = (
+        MissionCompletions.objects.filter(user=user, status="completed")
+        .aggregate(total=Coalesce(Sum("points_earned"), 0))
+        .get("total", 0)
+    )
+    spent = (
+        WordleHintUsage.objects.filter(user=user)
+        .aggregate(total=Coalesce(Sum("points_spent"), 0))
+        .get("total", 0)
+    )
+    return max(0, int(earned or 0) - int(spent or 0))
 
 
 def _is_temporary_admin_request(request) -> bool:
@@ -307,12 +323,8 @@ class UserStatsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # 1. Busca o total de pontos somando as missoes completadas
-        total_xp = (
-            MissionCompletions.objects.filter(user=request.user, status="completed")
-            .aggregate(total=Coalesce(Sum("points_earned"), 0))
-            .get("total", 0)
-        )
+        # 1. Busca o total de pontos (ganhos - consumidos em dicas Wordle)
+        total_xp = _calculate_user_total_xp(request.user)
 
         # 2. Aplica a matematica de divisao de niveis (Bronze/Prata/Ouro)
         stats = calculate_tier_progress(total_xp)
@@ -1056,6 +1068,134 @@ class MissionValidateView(APIView):
             response_data['total_questions'] = total_questions
         
         return Response(response_data, status=status.HTTP_200_OK)
+
+
+class MissionWordleHintUseView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, mission_id):
+        user = request.user
+
+        try:
+            mission = visible_missions_queryset_for(
+                user,
+                Mission.objects.filter(is_active=True),
+            ).get(pk=mission_id)
+        except Mission.DoesNotExist:
+            return Response(
+                {"error": "Missão não encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if mission.mission_type != "game":
+            return Response(
+                {"error": "Apenas missão Wordle possui uso de dicas."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not MissionCompletions.objects.filter(user=user, mission=mission).exists():
+            return Response(
+                {"error": "Você precisa iniciar esta missão primeiro."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        raw_hint_index = request.data.get("hint_index")
+        try:
+            hint_index = int(raw_hint_index)
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "hint_index inválido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        content_data = mission.content_data or {}
+        raw_hints = content_data.get("hints", [])
+        if isinstance(raw_hints, str):
+            raw_hints = [line.strip() for line in raw_hints.splitlines() if line.strip()]
+        elif not isinstance(raw_hints, list):
+            raw_hints = []
+
+        hints = [str(item).strip() for item in raw_hints if str(item).strip()]
+        if not hints:
+            return Response(
+                {"error": "Esta missão não possui dicas cadastradas."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if hint_index < 0 or hint_index >= len(hints):
+            return Response(
+                {"error": "hint_index fora do intervalo de dicas."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        hint_text = hints[hint_index]
+
+        with transaction.atomic():
+            # Bloqueia a linha do usuário para serializar consumos concorrentes.
+            User.objects.select_for_update().filter(pk=user.pk).first()
+
+            existing_usage = WordleHintUsage.objects.filter(
+                user=user,
+                mission=mission,
+                hint_index=hint_index,
+            ).first()
+            if existing_usage is not None:
+                return Response(
+                    {
+                        "status": "already_revealed",
+                        "hint_index": hint_index,
+                        "hint_text": existing_usage.revealed_hint or hint_text,
+                        "points_charged": 0,
+                        "remaining_total_xp": _calculate_user_total_xp(user),
+                        "free_hint_remaining": not WordleHintUsage.objects.filter(
+                            user=user,
+                            mission=mission,
+                            is_free=True,
+                        ).exists(),
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            previous_uses_count = WordleHintUsage.objects.filter(
+                user=user,
+                mission=mission,
+            ).count()
+            is_free = previous_uses_count == 0
+            points_charged = 0 if is_free else WORDLE_HINT_COST_POINTS
+
+            current_total_xp = _calculate_user_total_xp(user)
+            if points_charged > 0 and current_total_xp < points_charged:
+                return Response(
+                    {
+                        "error": "Pontos insuficientes para revelar esta dica.",
+                        "required_points": points_charged,
+                        "current_total_xp": current_total_xp,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            WordleHintUsage.objects.create(
+                user=user,
+                mission=mission,
+                hint_index=hint_index,
+                revealed_hint=hint_text,
+                points_spent=points_charged,
+                is_free=is_free,
+            )
+
+            remaining_total_xp = max(0, current_total_xp - points_charged)
+
+        return Response(
+            {
+                "status": "revealed",
+                "hint_index": hint_index,
+                "hint_text": hint_text,
+                "points_charged": points_charged,
+                "remaining_total_xp": remaining_total_xp,
+                "free_hint_remaining": False,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class LeaderboardMixin(APIView):
