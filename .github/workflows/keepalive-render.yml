@@ -10,7 +10,36 @@ jobs:
   ping-backend:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping health endpoint
+      - name: Ping health endpoint with retry
         run: |
-          set -e
-          curl -fsS --max-time 30 https://grengame-backend.onrender.com/health/
+          URL="https://grengame-backend.onrender.com/health/"
+          MAX_RETRIES=5
+          RETRY_DELAY=15
+          SUCCESS=false
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "🔁 Attempt $i of $MAX_RETRIES..."
+
+            HTTP_CODE=$(curl -o /dev/null -s -w "%{http_code}" \
+              --max-time 40 \
+              --connect-timeout 10 \
+              "$URL")
+
+            echo "   HTTP status: $HTTP_CODE"
+
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 400 ]; then
+              echo "✅ Backend is alive (HTTP $HTTP_CODE)"
+              SUCCESS=true
+              break
+            else
+              echo "⚠️  Got HTTP $HTTP_CODE — waiting ${RETRY_DELAY}s before retry..."
+              sleep $RETRY_DELAY
+            fi
+          done
+
+          if [ "$SUCCESS" = false ]; then
+            echo "❌ Backend did not respond after $MAX_RETRIES attempts."
+            exit 1
+          fi
+
+funciona bem para o nosso caso tento o dominio grengame.guifer.tech?
