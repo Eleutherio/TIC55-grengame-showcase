@@ -394,7 +394,13 @@ export default function Topbar() {
             >
               {userDisplayName}
             </p>
-            {isTemporaryUser && <TemporaryUserBadge compact className="mt-1" />}
+            {isTemporaryUser && (
+              <TemporaryUserBadge
+                compact
+                className="mt-1"
+                label="Administrador temporário"
+              />
+            )}
           </div>
         </Link>
       </aside>
