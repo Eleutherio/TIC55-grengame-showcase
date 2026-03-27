@@ -41,5 +41,3 @@ jobs:
             echo "❌ Backend did not respond after $MAX_RETRIES attempts."
             exit 1
           fi
-
-funciona bem para o nosso caso tento o dominio grengame.guifer.tech?
