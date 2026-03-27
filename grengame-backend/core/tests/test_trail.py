@@ -304,3 +304,46 @@ class TestCourseTrailView:
         assert 'completed_missions' in summary
         assert 'total_points' in summary
         assert 'earned_points' in summary
+
+    def test_temporary_admin_can_view_missions_from_visible_game(
+        self,
+        api_client,
+        create_user,
+    ):
+        owner = create_user(email='owner@test.com', role='admin')
+        temp_creator = create_user(
+            email='temp.creator@test.com',
+            role='admin',
+            is_temporary_account=True,
+        )
+        temp_viewer = create_user(
+            email='temp.viewer@test.com',
+            role='admin',
+            is_temporary_account=True,
+        )
+
+        game = Game.objects.create(
+            name='Jornada Sustentavel',
+            description='Desc',
+            category='sustentabilidade',
+            is_active=True,
+            created_by=owner,
+        )
+        Mission.objects.create(
+            game=game,
+            title='Missao Publica',
+            description='Desc da missao',
+            mission_type='reading',
+            icon='book',
+            order=1,
+            points_value=100,
+            is_active=True,
+            created_by=temp_creator,
+        )
+
+        api_client.force_authenticate(user=temp_viewer)
+        url = reverse('core:course-trail', args=[game.id])
+        response = api_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data['missions']) == 1
