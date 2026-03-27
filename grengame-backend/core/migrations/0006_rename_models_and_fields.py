@@ -47,6 +47,13 @@ class Migration(migrations.Migration):
             name='game_points',
             field=models.IntegerField(default=0, verbose_name='Pontos do Curso'),
         ),
+
+        # Remover constraint legada antes do rename de campo para evitar
+        # falha no SQLite ao reconstruir tabela temporária (NewGameProgress).
+        migrations.RemoveConstraint(
+            model_name='gameprogress',
+            name='unique_user_course_progress',
+        ),
         
         migrations.RenameField(
             model_name='gameprogress',
