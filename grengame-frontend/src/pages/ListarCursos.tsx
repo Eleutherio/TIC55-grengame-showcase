@@ -175,6 +175,11 @@ export default function ListarCursos() {
   const [hasMoreCourses, setHasMoreCourses] = useState(false);
   const [isLoadingMoreCourses, setIsLoadingMoreCourses] = useState(false);
   const [totalCourses, setTotalCourses] = useState<number | null>(null);
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(max-width: 640px)").matches
+      : false
+  );
   const [lastPlayedCourse, setLastPlayedCourse] = useState<Course | null>(null);
   const [forceEmptyLeaderboard, setForceEmptyLeaderboard] = useState(false);
   const [dicaIndex, setDicaIndex] = useState(0);
@@ -204,6 +209,20 @@ export default function ListarCursos() {
       document.body.classList.remove("inscrever-focus-mode");
     };
   }, [focusedCourse]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 640px)");
+    const handleChange = () => setIsMobileViewport(media.matches);
+    handleChange();
+
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", handleChange);
+      return () => media.removeEventListener("change", handleChange);
+    }
+
+    media.addListener(handleChange);
+    return () => media.removeListener(handleChange);
+  }, []);
 
   const currentUserId = useMemo(() => {
     try {
@@ -982,24 +1001,26 @@ export default function ListarCursos() {
             noResults={noResults}
           />
 
-          <div
-            className="leadboard-wrapper"
-            aria-labelledby="leaderboard-title"
-          >
-            <Leadboard
-              courseName={leaderboardCourseName}
-              entries={leaderboardEntriesForView}
-              isLoading={leaderboardLoading}
-              errorMessage={leaderboardError}
-              currentUserId={showUserInLeaderboard ? currentUserId : undefined}
-              trackedGameId={leaderboardCourseId}
-              emptyMessage={
-                leaderboardCourseId
-                  ? "Nenhum jogador no ranking deste game ainda."
-                  : "Escolha um game na lista para ver o ranking."
-              }
-            />
-          </div>
+          {!isMobileViewport && (
+            <div
+              className="leadboard-wrapper"
+              aria-labelledby="leaderboard-title"
+            >
+              <Leadboard
+                courseName={leaderboardCourseName}
+                entries={leaderboardEntriesForView}
+                isLoading={leaderboardLoading}
+                errorMessage={leaderboardError}
+                currentUserId={showUserInLeaderboard ? currentUserId : undefined}
+                trackedGameId={leaderboardCourseId}
+                emptyMessage={
+                  leaderboardCourseId
+                    ? "Nenhum jogador no ranking deste game ainda."
+                    : "Escolha um game na lista para ver o ranking."
+                }
+              />
+            </div>
+          )}
         </div>
 
         <div className="inscrever-page">
@@ -1053,6 +1074,24 @@ export default function ListarCursos() {
                   Você chegou ao fim da lista.
                 </p>
               )}
+            </div>
+          )}
+
+          {isMobileViewport && (
+            <div className="leadboard-wrapper" aria-labelledby="leaderboard-title">
+              <Leadboard
+                courseName={leaderboardCourseName}
+                entries={leaderboardEntriesForView}
+                isLoading={leaderboardLoading}
+                errorMessage={leaderboardError}
+                currentUserId={showUserInLeaderboard ? currentUserId : undefined}
+                trackedGameId={leaderboardCourseId}
+                emptyMessage={
+                  leaderboardCourseId
+                    ? "Nenhum jogador no ranking deste game ainda."
+                    : "Escolha um game na lista para ver o ranking."
+                }
+              />
             </div>
           )}
         </div>

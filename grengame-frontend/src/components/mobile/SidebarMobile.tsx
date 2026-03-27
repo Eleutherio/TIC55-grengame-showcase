@@ -3,6 +3,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import logoutIcon from "../../assets/img/logout.svg";
 import { isAdmin as isAdminFromToken } from "../../utils/auth";
 import { API_URL } from "../../config/api";
+import TemporaryUserBadge from "../TemporaryUserBadge";
 
 type SidebarMobileProps = {
   isOpen: boolean;
@@ -28,6 +29,7 @@ type UserMe = {
   last_name?: string;
   name?: string;
   username?: string;
+  is_temporary_account?: boolean;
 };
 
 const adminNavItems: NavItem[] = [
@@ -111,6 +113,7 @@ export default function SidebarMobile({ isOpen, onClose }: SidebarMobileProps) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
+  const [isTemporaryAccount, setIsTemporaryAccount] = useState(false);
   const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [userError, setUserError] = useState<string | null>(null);
   const resultCardRef = useRef<HTMLDivElement | null>(null);
@@ -165,12 +168,14 @@ export default function SidebarMobile({ isOpen, onClose }: SidebarMobileProps) {
 
         setUserName(resolvedName);
         setUserEmail(data.email ?? "");
+        setIsTemporaryAccount(Boolean(data.is_temporary_account));
         setIsLoadingUser(false);
       })
       .catch((error) => {
         void error;
         if (cancelled) return;
         setUserError("Não foi possível carregar os dados do usuário.");
+        setIsTemporaryAccount(false);
         setIsLoadingUser(false);
       });
 
@@ -431,13 +436,19 @@ export default function SidebarMobile({ isOpen, onClose }: SidebarMobileProps) {
             >
               {emailDisplay}
             </p>
-            <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs text-white/70">
-              <span
-                className="h-2 w-2 rounded-full bg-emerald-400"
-                aria-hidden="true"
-              />
-              {isAdmin ? "Administrador" : "Colaborador"}
-            </p>
+            <div className="mt-3">
+              {isTemporaryAccount ? (
+                <TemporaryUserBadge label="Administrador temporário" />
+              ) : (
+                <p className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs text-white/70">
+                  <span
+                    className="h-2 w-2 rounded-full bg-emerald-400"
+                    aria-hidden="true"
+                  />
+                  {isAdmin ? "Administrador" : "Colaborador"}
+                </p>
+              )}
+            </div>
           </div>
         </section>
 
@@ -579,7 +590,6 @@ export default function SidebarMobile({ isOpen, onClose }: SidebarMobileProps) {
     </>
   );
 }
-
 
 
 

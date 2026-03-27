@@ -12,6 +12,7 @@ import logoutIcon from "../assets/img/logout.svg";
 import { isAdmin as isAdminFromToken } from "../utils/auth";
 import SearchField from "./SearchField";
 import { API_URL } from "../config/api";
+import TemporaryUserBadge from "./TemporaryUserBadge";
 
 // Classes utilitárias compartilhadas pelas entradas do menu.
 const base =
@@ -38,6 +39,10 @@ type CourseSearchResult = {
   title: string;
   category?: string;
   description?: string;
+};
+
+type SidebarMe = {
+  is_temporary_account?: boolean;
 };
 
 const SEARCH_DEBOUNCE_MS = 450;
@@ -144,6 +149,7 @@ export default function Sidebar({
   const [searchResults, setSearchResults] = useState<CourseSearchResult[]>([]);
   const [lastSearchedQuery, setLastSearchedQuery] = useState("");
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [isTemporaryAccount, setIsTemporaryAccount] = useState(false);
   const [searchOverlayPosition, setSearchOverlayPosition] = useState<{
     top: number;
     left: number;
@@ -155,6 +161,48 @@ export default function Sidebar({
   >(new Map());
   const isAdmin = isAdminFromToken();
   const visibleItems = isAdmin ? adminNavItems : userNavItems;
+
+  useEffect(() => {
+    let active = true;
+
+    if (!isAdmin) {
+      setIsTemporaryAccount(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    const loadMe = async () => {
+      const token = localStorage.getItem("accessToken");
+      if (!token) {
+        if (active) setIsTemporaryAccount(false);
+        return;
+      }
+
+      try {
+        const normalizedBaseUrl = API_URL.replace(/\/+$/, "");
+        const response = await fetch(`${normalizedBaseUrl}/auth/me/`, {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!response.ok) throw new Error(`HTTP_${response.status}`);
+        const data = (await response.json()) as SidebarMe;
+        if (!active) return;
+        setIsTemporaryAccount(Boolean(data.is_temporary_account));
+      } catch {
+        if (!active) return;
+        setIsTemporaryAccount(false);
+      }
+    };
+
+    void loadMe();
+
+    return () => {
+      active = false;
+    };
+  }, [isAdmin]);
 
   // Fluxo de logout: tenta backend e sempre limpa tokens locais antes de redirecionar.
   const handleLogout = async () => {
@@ -618,11 +666,17 @@ export default function Sidebar({
               inputRef={searchInputRef}
             />
           </div>
-          {isAdmin && (
-            <div className=" text-sm font-medium tracking-tight text-amarelo">
-              Painel do Administrador
-            </div>
-          )}
+          {isAdmin &&
+            (isTemporaryAccount ? (
+              <TemporaryUserBadge
+                label="Administrador temporário"
+                className="mt-1"
+              />
+            ) : (
+              <div className=" text-sm font-medium tracking-tight text-amarelo">
+                Painel do Administrador
+              </div>
+            ))}
         </div>
         {/* Navegação derivada do mock de RBAC */}
         <nav

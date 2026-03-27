@@ -25,7 +25,7 @@ export default function DashboardLayoutMobile() {
 
       <TopbarMobile onToggleSidebar={toggleSidebar} isSidebarOpen={isSidebarOpen} />
 
-      <main className="relative z-0 px-4 pb-10 pt-4 sm:px-6">
+      <main className="relative z-0 px-4 pb-10 pt-[calc(env(safe-area-inset-top)+9rem)] sm:px-6">
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
           <Outlet />
         </div>

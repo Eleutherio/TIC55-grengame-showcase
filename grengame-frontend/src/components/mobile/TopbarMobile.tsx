@@ -91,11 +91,21 @@ export default function TopbarMobile({
   onToggleSidebar,
   isSidebarOpen,
 }: TopbarMobileProps) {
+  const HIDE_DELTA_PX = 28;
+  const SHOW_DELTA_PX = 18;
   const [me, setMe] = useState<Me | null>(null);
   const [points, setPoints] = useState<number>(0);
+  const [isVisible, setIsVisible] = useState(true);
   const [userDataVersion, setUserDataVersion] = useState(0);
   const [isTemporaryModalOpen, setIsTemporaryModalOpen] = useState(false);
   const shownTemporaryModalTokenKey = useRef<string | null>(null);
+  const lastScrollY = useRef(0);
+  const lastToggleScrollY = useRef(0);
+  const visibilityRef = useRef(true);
+
+  useEffect(() => {
+    visibilityRef.current = isVisible;
+  }, [isVisible]);
 
   useEffect(() => {
     let active = true;
@@ -168,81 +178,139 @@ export default function TopbarMobile({
     setIsTemporaryModalOpen(false);
   };
 
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      const delta = currentScrollY - lastScrollY.current;
+
+      if (isSidebarOpen || currentScrollY <= 24) {
+        if (!visibilityRef.current) {
+          setIsVisible(true);
+          visibilityRef.current = true;
+        }
+        lastToggleScrollY.current = currentScrollY;
+        lastScrollY.current = currentScrollY;
+        return;
+      }
+
+      // Ignora micro variações de scroll para evitar efeito de "piscar".
+      if (Math.abs(delta) < 2) {
+        return;
+      }
+
+      if (delta > 0) {
+        if (
+          visibilityRef.current &&
+          currentScrollY - lastToggleScrollY.current >= HIDE_DELTA_PX
+        ) {
+          setIsVisible(false);
+          visibilityRef.current = false;
+          lastToggleScrollY.current = currentScrollY;
+        }
+      } else if (
+        !visibilityRef.current &&
+        lastToggleScrollY.current - currentScrollY >= SHOW_DELTA_PX
+      ) {
+        setIsVisible(true);
+        visibilityRef.current = true;
+        lastToggleScrollY.current = currentScrollY;
+      }
+
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [isSidebarOpen]);
+
   return (
     <>
-      <header
-        data-mobile-topbar="true"
-        className="sticky top-0 z-30 mx-4 mt-4 flex flex-col gap-3 rounded-2xl bg-gradient-to-r from-azul-forte to-roxo-forte px-4 py-4 text-white shadow-lg shadow-black/25 sm:mx-6"
+      <div
+        className={`fixed inset-x-0 top-0 z-40 px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] transition-transform duration-300 ease-out sm:px-6 ${
+          isVisible
+            ? "translate-y-0"
+            : "-translate-y-[calc(100%+0.75rem)]"
+        }`}
       >
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex flex-col items-start gap-2">
-            <button
-              type="button"
-              onClick={onToggleSidebar}
-              aria-label={isSidebarOpen ? "Fechar menu" : "Abrir menu"}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white shadow-lg shadow-black/30 transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
+        <header
+          data-mobile-topbar="true"
+          className="pointer-events-auto flex flex-col gap-3 rounded-2xl bg-gradient-to-r from-azul-forte to-roxo-forte px-4 py-4 text-white shadow-lg shadow-black/25"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col items-start gap-2">
+              <button
+                type="button"
+                onClick={onToggleSidebar}
+                aria-label={isSidebarOpen ? "Fechar menu" : "Abrir menu"}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white shadow-lg shadow-black/30 transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               >
-                {isSidebarOpen ? (
-                  <path d="M18 6L6 18M6 6l12 12" />
-                ) : (
-                  <path d="M4 6h16M4 12h16M4 18h10" />
-                )}
-              </svg>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="flex flex-col items-end gap-1">
-              <span className="text-sm text-white/60">Ola, {firstName}</span>
-              {isTemporaryUser && <TemporaryUserBadge compact />}
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  {isSidebarOpen ? (
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  ) : (
+                    <path d="M4 6h16M4 12h16M4 18h10" />
+                  )}
+                </svg>
+              </button>
             </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col items-end gap-1">
+                <span className="text-sm text-white/60">Ola, {firstName}</span>
+                {isTemporaryUser && (
+                  <TemporaryUserBadge
+                    compact
+                    label="Administrador temporário"
+                  />
+                )}
+              </div>
+              <Link
+                to="/app/perfil"
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/10 p-0.5 shadow-inner shadow-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                aria-label="Ir para o perfil"
+              >
+                {avatarSrc ? (
+                  <img
+                    src={avatarSrc}
+                    alt=""
+                    className="h-full w-full rounded-full object-cover"
+                  />
+                ) : (
+                  <img
+                    src={avatarIcon}
+                    alt=""
+                    className="h-full w-full rounded-full object-cover"
+                  />
+                )}
+              </Link>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className=" text-xm flex leading-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70">
+              <span className=" text-xl text-amarelo/[0.68]">G</span>
+              <span className=" text-xl ">ren</span>
+              <span className=" text-xl text-vermelho-forte/[0.68]">G</span>
+              <span className=" text-xl ">ame</span>
+            </span>
             <Link
-              to="/app/perfil"
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/10 p-0.5 shadow-inner shadow-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-              aria-label="Ir para o perfil"
+              to="/app/progresso"
+              className="flex justify-end gap-3 text-xm text-amarelo focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              aria-label="Ver meu progresso"
             >
-              {avatarSrc ? (
-                <img
-                  src={avatarSrc}
-                  alt=""
-                  className="h-full w-full rounded-full object-cover"
-                />
-              ) : (
-                <img
-                  src={avatarIcon}
-                  alt=""
-                  className="h-full w-full rounded-full object-cover"
-                />
-              )}
+              <p>{points} pontos</p>
             </Link>
           </div>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className=" text-xm flex leading-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70">
-            <span className=" text-xl text-amarelo/[0.68]">G</span>
-            <span className=" text-xl ">ren</span>
-            <span className=" text-xl text-vermelho-forte/[0.68]">G</span>
-            <span className=" text-xl ">ame</span>
-          </span>
-          <Link
-            to="/app/progresso"
-            className="flex justify-end gap-3 text-xm text-amarelo focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-            aria-label="Ver meu progresso"
-          >
-            <p>{points} pontos</p>
-          </Link>
-        </div>
-      </header>
+        </header>
+      </div>
 
       <TemporaryProfileInfoModal
         isOpen={isTemporaryModalOpen}
