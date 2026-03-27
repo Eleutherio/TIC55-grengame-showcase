@@ -81,7 +81,6 @@ export default function Trilhas() {
       ? locationState.challengeCriterionLabel
       : null;
 
-
   const [missions, setMissions] = useState<MissionWithStatus[]>([]);
   const [isLoadingMissions, setIsLoadingMissions] = useState(true);
   const [courseName, setCourseName] = useState<string>("");
@@ -153,15 +152,12 @@ export default function Trilhas() {
         const token = localStorage.getItem("accessToken");
 
         // Buscar dados do game
-        const gameResponse = await fetch(
-          `${API_URL}/auth/games/${gameId}/`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
+        const gameResponse = await fetch(`${API_URL}/auth/games/${gameId}/`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
-        );
+        });
 
         if (gameResponse.ok) {
           const gameData = await gameResponse.json();
@@ -405,8 +401,9 @@ export default function Trilhas() {
 
       {/* Missoes */}
       <div
-        className={`trilhas-missions-area${isScrollable ? " trilhas-missions-area--scroll" : ""
-          }`}
+        className={`trilhas-missions-area${
+          isScrollable ? " trilhas-missions-area--scroll" : ""
+        }`}
         ref={missionsAreaRef}
       >
         {missions.length > 0 ? (
@@ -436,8 +433,9 @@ export default function Trilhas() {
                   {stepMarkers.map((marker, index) => (
                     <rect
                       key={`step-${index}`}
-                      className={`trilha-step${marker.alt ? " trilha-step--alt" : ""
-                        }`}
+                      className={`trilha-step${
+                        marker.alt ? " trilha-step--alt" : ""
+                      }`}
                       x={marker.x - STEP_W / 2}
                       y={marker.y - STEP_H / 2}
                       width={STEP_W}
@@ -455,10 +453,10 @@ export default function Trilhas() {
                 const shortDescription = mission.description?.trim();
                 const displayDescription =
                   shortDescription &&
-                    shortDescription.length > TOOLTIP_MAX_CHARS
+                  shortDescription.length > TOOLTIP_MAX_CHARS
                     ? `${shortDescription
-                      .slice(0, TOOLTIP_MAX_CHARS - 3)
-                      .trimEnd()}...`
+                        .slice(0, TOOLTIP_MAX_CHARS - 3)
+                        .trimEnd()}...`
                     : shortDescription;
                 const shouldFlipTooltip = pos.top < 80;
                 const tooltipShiftClass =
@@ -500,12 +498,13 @@ export default function Trilhas() {
                       if (e.key === "Enter" || e.key === " ")
                         handleMissionClick(mission);
                     }}
-                    aria-label={`${mission.title} - ${isLocked
+                    aria-label={`${mission.title} - ${
+                      isLocked
                         ? "Bloqueada"
                         : isCompleted
                           ? "Concluida"
                           : "Disponivel"
-                      }`}
+                    }`}
                     aria-describedby={
                       displayDescription
                         ? `mission-tooltip-${mission.id}`
@@ -513,9 +512,9 @@ export default function Trilhas() {
                     }
                   >
                     <div
-                      className={`ellipse-badge ${isCurrent ? " ellipse-badge--current" : ""
-                        }${isCompleted ? " ellipse-badge--completed" : ""
-                        }`}
+                      className={`ellipse-badge ${
+                        isCurrent ? " ellipse-badge--current" : ""
+                      }${isCompleted ? " ellipse-badge--completed" : ""}`}
                     >
                       <img
                         src={iconSrc}
@@ -532,11 +531,18 @@ export default function Trilhas() {
                       />
 
                       {isCompleted && (
-                        <span className="ellipse-completed-overlay" aria-hidden="true">
-                          <span className="ellipse-completed-check">{"\u2713"}</span>
+                        <span
+                          className="ellipse-completed-overlay"
+                          aria-hidden="true"
+                        >
+                          <span className="ellipse-completed-check">
+                            {"\u2713"}
+                          </span>
                         </span>
                       )}
-                      {isLocked && <span className="ellipse-lock">{"\uD83D\uDD12"}</span>}
+                      {isLocked && (
+                        <span className="ellipse-lock">{"\uD83D\uDD12"}</span>
+                      )}
                     </div>
 
                     <div className="mission-stars">
@@ -553,8 +559,9 @@ export default function Trilhas() {
                     {displayDescription && (
                       <div
                         id={`mission-tooltip-${mission.id}`}
-                        className={`trilha-tooltip${shouldFlipTooltip ? " trilha-tooltip--bottom" : ""
-                          }${tooltipShiftClass}`}
+                        className={`trilha-tooltip${
+                          shouldFlipTooltip ? " trilha-tooltip--bottom" : ""
+                        }${tooltipShiftClass}`}
                         role="tooltip"
                       >
                         <span className="trilha-tooltip__label">
@@ -571,9 +578,13 @@ export default function Trilhas() {
             </div>
           </div>
         ) : (
-          <div className="missions-status-card" role="status" aria-live="polite">
+          <div
+            className="missions-status-card"
+            role="status"
+            aria-live="polite"
+          >
             <p className="missions-status-title">
-              Aguarde, estamo carregando as missoes desse game...
+              Aguarde, estamos carregando as missões desse game...
             </p>
             <p className="missions-status-subtitle">
               {isLoadingMissions
@@ -604,4 +615,3 @@ export default function Trilhas() {
     </div>
   );
 }
-

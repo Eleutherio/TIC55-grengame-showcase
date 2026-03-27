@@ -34,6 +34,9 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
   const [hasScrolledToEnd, setHasScrolledToEnd] = useState(isCompleted);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth <= 768 : false,
+  );
   const pageRef = useRef<HTMLDivElement>(null);
   const startTimeRef = useRef<number>(Date.now());
 
@@ -91,6 +94,18 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, [hasReadAll, isCompleted]);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const bodyTextColor = isMobile ? "#111827" : "#1F2937";
+  const secondaryTextColor = isMobile ? "#1F2937" : "#384457";
+  const mutedTextColor = isMobile ? "#1F2937" : "#666";
+  const helperTextColor = isMobile ? "#111827" : "#374151";
+  const helperMutedTextColor = isMobile ? "#1F2937" : "#4B5563";
 
   const handleNext = async () => {
     // Se já completou OU se já leu tudo
@@ -243,7 +258,7 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
 
         <p style={{
           fontSize: "12px",
-          color: "#666",
+          color: mutedTextColor,
           margin: 0,
         }}>
           {mission.order} de {totalMissions} Conteúdos
@@ -266,7 +281,7 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
         {shouldShowDescription && (
           <p style={{
             fontSize: "15px",
-            color: "#384457",
+            color: secondaryTextColor,
             lineHeight: "1.5",
             maxWidth: "800px",
           }}>
@@ -278,7 +293,7 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
       <div style={{
         maxWidth: "1200px",
         margin: "0 auto",
-        color: "#1F2937",
+        color: bodyTextColor,
         fontSize: "15px",
         lineHeight: "1.7",
       }}>
@@ -396,6 +411,7 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
                 <p style={{
                   fontSize: "14px",
                   lineHeight: "1.6",
+                  color: bodyTextColor,
                   margin: 0,
                   opacity: 0.95,
                 }}>
@@ -410,7 +426,7 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
       {!hasReadAll && !isCompleted && (
         <div style={{
           textAlign: "center",
-          color: "#374151",
+          color: helperTextColor,
           fontSize: "14px",
           marginTop: "20px",
           marginBottom: "20px",
@@ -432,7 +448,7 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
               )}
               {!hasScrolledToEnd && (
                 <div style={{
-                  color: "#4B5563",
+                  color: helperMutedTextColor,
                   fontSize: "13px",
                 }}>
                   ↓ Role até o final do texto
