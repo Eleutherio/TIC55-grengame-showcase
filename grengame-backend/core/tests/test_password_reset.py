@@ -220,6 +220,19 @@ class TestPasswordResetVerify:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    def test_verify_does_not_reveal_user_existence(self, api_client):
+        response = api_client.post(
+            "/auth/password-reset/verify/",
+            {
+                "email": "naoexiste@grendene.com.br",
+                "code": "222222",
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "inválido" in response.data["error"].lower()
+
 
 @pytest.mark.django_db
 class TestPasswordResetConfirm:

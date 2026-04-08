@@ -90,6 +90,7 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 MAX_AVATAR_SIZE = 2 * 1024 * 1024
+
 BADGE_CRITERION_LABELS = {
     "course_points": "Conquistador do Curso",
     "perfect_missions": "Perfeccionista",
@@ -132,6 +133,77 @@ def _serialize_temporary_access_request(access_request):
         if access_request.reviewed_by_id
         else None,
     }
+
+
+def _mission_requires_consumption_validation(mission):
+    return mission.mission_type in {"video", "reading"}
+
+
+def _coerce_positive_int(raw_value):
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _get_mission_required_consumption_seconds(mission):
+    content_data = mission.content_data or {}
+    if mission.mission_type == "reading":
+        minutes = _coerce_positive_int(content_data.get("min_read_time"))
+        if minutes is not None:
+            return minutes * 60
+        return getattr(settings, "MISSION_READING_DEFAULT_MIN_SECONDS", 60)
+
+    if mission.mission_type == "video":
+        minutes = _coerce_positive_int(content_data.get("duration"))
+        if minutes is not None:
+            return minutes * 60
+        return getattr(settings, "MISSION_VIDEO_DEFAULT_MIN_SECONDS", 60)
+
+    return 0
+
+
+def _get_mission_started_at(mission_completion):
+    return (
+        mission_completion.started_at
+        or mission_completion.completed_at
+        or timezone.now()
+    )
+
+
+def _get_mission_elapsed_seconds(mission_completion, reference_time=None):
+    started_at = _get_mission_started_at(mission_completion)
+    effective_reference = reference_time or timezone.now()
+    elapsed = int((effective_reference - started_at).total_seconds())
+    return max(elapsed, 0)
+
+
+def _build_wordle_letter_states(attempt_word, target_word):
+    normalized_attempt = str(attempt_word or "").upper()
+    normalized_target = str(target_word or "").upper()
+    word_length = len(normalized_target)
+    states = ["absent"] * word_length
+    remaining_letters = {}
+
+    for index in range(word_length):
+        attempt_letter = normalized_attempt[index]
+        target_letter = normalized_target[index]
+        if attempt_letter == target_letter:
+            states[index] = "correct"
+        else:
+            remaining_letters[target_letter] = remaining_letters.get(target_letter, 0) + 1
+
+    for index in range(word_length):
+        if states[index] == "correct":
+            continue
+        attempt_letter = normalized_attempt[index]
+        remaining_count = remaining_letters.get(attempt_letter, 0)
+        if remaining_count > 0:
+            states[index] = "present"
+            remaining_letters[attempt_letter] = remaining_count - 1
+
+    return states
 
 
 def _provision_temporary_access_user(nome, contato_email, *, existing_user=None):
@@ -1021,7 +1093,8 @@ class MissionCompletionsStartView(APIView):
             user=user,
             mission=mission,
             status='in_progress',
-            points_earned=0
+            points_earned=0,
+            started_at=timezone.now(),
         )
         
         serializer = MissionCompletionsSerializer(mission_completion)
@@ -1057,10 +1130,41 @@ class MissionCompletionsCompleteView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        if mission_completion.mission.mission_type in {'quiz', 'game'}:
+            return Response(
+                {
+                    'error': (
+                        'Esta missão exige validação específica antes da conclusão.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if (
+            _mission_requires_consumption_validation(mission_completion.mission)
+            and mission_completion.consumption_validated_at is None
+        ):
+            required_seconds = _get_mission_required_consumption_seconds(
+                mission_completion.mission
+            )
+            elapsed_seconds = _get_mission_elapsed_seconds(mission_completion)
+            return Response(
+                {
+                    'error': 'Consumo da missão ainda não validado no servidor.',
+                    'required_seconds': required_seconds,
+                    'elapsed_seconds': elapsed_seconds,
+                    'remaining_seconds': max(required_seconds - elapsed_seconds, 0),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Marca como concluída e registra pontos ganhos
         mission_completion.status = 'completed'
         mission_completion.points_earned = mission_completion.mission.points_value
-        mission_completion.save()
+        mission_completion.completed_at = timezone.now()
+        mission_completion.save(
+            update_fields=['status', 'points_earned', 'completed_at']
+        )
         
         # Atualizar progresso do game automaticamente
         game = mission_completion.mission.game
@@ -1113,6 +1217,55 @@ class MissionValidateView(APIView):
         is_correct = False
         points_earned = 0
         message = ""
+
+        if _mission_requires_consumption_validation(mission):
+            validation_now = timezone.now()
+            required_seconds = _get_mission_required_consumption_seconds(mission)
+            elapsed_seconds = _get_mission_elapsed_seconds(
+                mission_completion,
+                reference_time=validation_now,
+            )
+
+            if mission.mission_type == 'reading':
+                if request.data.get('scroll_completed') is not True:
+                    return Response(
+                        {'error': 'A leitura precisa ser percorrida até o final antes da validação.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            elif mission.mission_type == 'video':
+                if request.data.get('playback_completed') is not True:
+                    return Response(
+                        {'error': 'O vídeo precisa sinalizar reprodução concluída antes da validação.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            if elapsed_seconds < required_seconds:
+                return Response(
+                    {
+                        'error': 'Tempo mínimo de consumo ainda não atingido.',
+                        'required_seconds': required_seconds,
+                        'elapsed_seconds': elapsed_seconds,
+                        'remaining_seconds': required_seconds - elapsed_seconds,
+                        'status': mission_completion.status,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if mission_completion.consumption_validated_at is None:
+                mission_completion.consumption_validated_at = validation_now
+                mission_completion.save(update_fields=['consumption_validated_at'])
+
+            return Response(
+                {
+                    'success': True,
+                    'status': mission_completion.status,
+                    'ready_to_complete': True,
+                    'required_seconds': required_seconds,
+                    'elapsed_seconds': elapsed_seconds,
+                    'message': 'Consumo validado com sucesso. Agora conclua a missão.',
+                },
+                status=status.HTTP_200_OK,
+            )
         
         if mission.mission_type == 'quiz':
             # Validar respostas do quiz
@@ -1152,7 +1305,9 @@ class MissionValidateView(APIView):
             mission_completion.status = 'completed'
             mission_completion.points_earned = points_earned
             mission_completion.completed_at = timezone.now()
-            mission_completion.save()
+            mission_completion.save(
+                update_fields=['status', 'points_earned', 'completed_at']
+            )
         
         elif mission.mission_type == 'game':
             # Validar wordle
@@ -1164,6 +1319,14 @@ class MissionValidateView(APIView):
                     {'error': 'Palavra não configurada para este jogo.'},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
+
+            if len(user_word) != len(correct_word) or not user_word.isalpha():
+                return Response(
+                    {'error': 'Palavra inválida para esta missão.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            letter_states = _build_wordle_letter_states(user_word, correct_word)
             
             if user_word == correct_word:
                 is_correct = True
@@ -1173,7 +1336,9 @@ class MissionValidateView(APIView):
                 mission_completion.status = 'completed'
                 mission_completion.points_earned = points_earned
                 mission_completion.completed_at = timezone.now()
-                mission_completion.save()
+                mission_completion.save(
+                    update_fields=['status', 'points_earned', 'completed_at']
+                )
             else:
                 message = "Palavra incorreta. Tente novamente!"
         
@@ -1198,6 +1363,9 @@ class MissionValidateView(APIView):
         if mission.mission_type == 'quiz':
             response_data['correct_answers'] = correct_count
             response_data['total_questions'] = total_questions
+        elif mission.mission_type == 'game':
+            response_data['letter_states'] = letter_states
+            response_data['word_length'] = len(correct_word)
         
         return Response(response_data, status=status.HTTP_200_OK)
 
@@ -2044,12 +2212,6 @@ class TemporaryAccessRequestView(APIView):
                         "Solicitacao processada com sucesso. Verifique seu e-mail "
                         "para receber o codigo de ativacao."
                     ),
-                    "temporary_access_activation_expires_at": (
-                        activation_context["activation_expires_at_display"]
-                    ),
-                    "temporary_access_account_expires_at": (
-                        activation_context["account_expires_at_display"]
-                    ),
                 },
                 status=status.HTTP_201_CREATED,
             )
@@ -2110,7 +2272,6 @@ class TemporaryAccessRequestView(APIView):
                     "do acesso temporario. Se aprovada, voce recebera um "
                     "codigo de ativacao por e-mail."
                 ),
-                "temporary_access_status": TemporaryAccessRequest.STATUS_PENDING,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -2311,17 +2472,9 @@ class TemporaryAccessVerifyView(APIView):
         try:
             user = User.objects.get(email=normalized_email)
         except User.DoesNotExist:
-            if TemporaryAccessRequest.objects.filter(
-                email=normalized_email,
-                status=TemporaryAccessRequest.STATUS_PENDING,
-            ).exists():
-                return Response(
-                    {"error": "Codigo invalido ou solicitacao ainda nao aprovada."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
             return Response(
-                {"error": "Usuario nao encontrado."},
-                status=status.HTTP_404_NOT_FOUND,
+                {"error": "Codigo invalido ou solicitacao indisponivel."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         if not getattr(user, "is_temporary_account", False):
@@ -2501,7 +2654,7 @@ class PasswordResetVerifyView(APIView):
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
-            return Response({'error': 'Usuário não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Código inválido.'}, status=status.HTTP_400_BAD_REQUEST)
 
         token_obj = (
             PasswordResetToken.objects.filter(user=user, is_used=False)

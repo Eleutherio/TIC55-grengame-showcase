@@ -159,9 +159,9 @@ class GameSerializer(serializers.ModelSerializer):
                 validate_image_upload(
                     arquivo,
                     max_size=5 * 1024 * 1024,
-                    size_error_message="Imagem deve ter no m?ximo 5MB.",
-                    invalid_format_message="Formato de imagem inv?lido. Use JPG, PNG ou WEBP.",
-                    invalid_content_message="Arquivo de imagem inv?lido ou corrompido.",
+                    size_error_message="Imagem deve ter no máximo 5MB.",
+                    invalid_format_message="Formato de imagem inválido. Use JPG, PNG ou WEBP.",
+                    invalid_content_message="Arquivo de imagem inválido ou corrompido.",
                 )
             except FileUploadSecurityError as exc:
                 raise serializers.ValidationError(str(exc))
@@ -173,9 +173,9 @@ class GameSerializer(serializers.ModelSerializer):
                 validate_video_upload(
                     arquivo,
                     max_size=1 * 1024 * 1024 * 1024,
-                    size_error_message="V?deo deve ter no m?ximo 1GB.",
-                    invalid_format_message="Formato de v?deo inv?lido. Use: mp4, webm, mov ou avi.",
-                    invalid_content_message="Arquivo de v?deo inv?lido ou corrompido.",
+                    size_error_message="Vídeo deve ter no máximo 1GB.",
+                    invalid_format_message="Formato de vídeo inválido. Use: mp4, webm, mov ou avi.",
+                    invalid_content_message="Arquivo de vídeo inválido ou corrompido.",
                 )
             except FileUploadSecurityError as exc:
                 raise serializers.ValidationError(str(exc))
@@ -200,9 +200,9 @@ class GameSerializer(serializers.ModelSerializer):
                 validate_image_upload(
                     arquivo,
                     max_size=5 * 1024 * 1024,
-                    size_error_message="Banner deve ter no m?ximo 5MB.",
-                    invalid_format_message="Formato de imagem inv?lido. Use JPG, PNG ou WEBP.",
-                    invalid_content_message="Arquivo de imagem inv?lido ou corrompido.",
+                    size_error_message="Banner deve ter no máximo 5MB.",
+                    invalid_format_message="Formato de imagem inválido. Use JPG, PNG ou WEBP.",
+                    invalid_content_message="Arquivo de imagem inválido ou corrompido.",
                 )
             except FileUploadSecurityError as exc:
                 raise serializers.ValidationError(str(exc))
@@ -271,6 +271,75 @@ class MissionSerializer(serializers.ModelSerializer):
         fields = ['id', 'game', 'game_name', 'game_category', 'title', 'description', 'mission_type', 'icon', 'order', 'points_value', 'content_data', 'is_active', 'created_at', 'updated_at', 'completion']
         read_only_fields = ['id', 'created_at', 'updated_at', 'completion']
 
+    def _should_include_sensitive_content(self):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        return bool(
+            request
+            and getattr(user, 'is_authenticated', False)
+            and getattr(user, 'role', None) == 'admin'
+        )
+
+    def _sanitize_content_data(self, obj):
+        content_data = obj.content_data
+        if not isinstance(content_data, dict):
+            return content_data
+
+        if self._should_include_sensitive_content():
+            return content_data
+
+        if obj.mission_type == 'quiz':
+            raw_questions = content_data.get('questions', [])
+            sanitized_questions = []
+            if isinstance(raw_questions, list):
+                for index, raw_question in enumerate(raw_questions):
+                    if not isinstance(raw_question, dict):
+                        continue
+                    sanitized_questions.append(
+                        {
+                            'id': raw_question.get('id', index + 1),
+                            'question': raw_question.get('question', ''),
+                            'options': raw_question.get('options', []),
+                        }
+                    )
+            return {
+                'questions': sanitized_questions,
+                'questions_total': len(sanitized_questions),
+            }
+
+        if obj.mission_type == 'game':
+            hints = content_data.get('hints', [])
+            word = str(content_data.get('word', '') or '')
+            return {
+                'game_type': content_data.get('game_type', 'wordle'),
+                'max_attempts': content_data.get('max_attempts', 6),
+                'hints': hints,
+                'word_length': len(word) if word else content_data.get('word_length', 5),
+            }
+
+        if obj.mission_type == 'video':
+            allowed_keys = {'url', 'video_url', 'duration', 'require_watch_to_end'}
+            return {
+                key: value
+                for key, value in content_data.items()
+                if key in allowed_keys
+            }
+
+        if obj.mission_type == 'reading':
+            allowed_keys = {'text', 'tip', 'image_url', 'image_alt', 'min_read_time'}
+            return {
+                key: value
+                for key, value in content_data.items()
+                if key in allowed_keys
+            }
+
+        return content_data
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['content_data'] = self._sanitize_content_data(instance)
+        return data
+
     def get_completion(self, obj):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
@@ -278,8 +347,11 @@ class MissionSerializer(serializers.ModelSerializer):
                 completion = MissionCompletions.objects.get(mission=obj, user=request.user)
                 return {
                     'completed': completion.status == 'completed',
+                    'status': completion.status,
                     'points_earned': completion.points_earned,
-                    'completed_at': completion.completed_at
+                    'started_at': completion.started_at,
+                    'completed_at': completion.completed_at,
+                    'consumption_validated_at': completion.consumption_validated_at,
                 }
             except MissionCompletions.DoesNotExist:
                 return None
@@ -372,9 +444,10 @@ class MissionCompletionsSerializer(serializers.ModelSerializer):
         model = MissionCompletions
         fields = [
             'id', 'mission', 'mission_title', 'mission_description',
-            'mission_points_value', 'points_earned', 'status', 'completed_at'
+            'mission_points_value', 'points_earned', 'status', 'started_at',
+            'completed_at', 'consumption_validated_at'
         ]
-        read_only_fields = ['id', 'completed_at']
+        read_only_fields = ['id', 'started_at', 'completed_at', 'consumption_validated_at']
 
     def validate_points_earned(self, value):
         if value < 0:

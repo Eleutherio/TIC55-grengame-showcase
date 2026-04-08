@@ -67,7 +67,8 @@ def test_temporary_access_request_success_creates_pending_request_without_accoun
     assert pending_request.accepted_formal_terms is True
     assert User.objects.filter(email="maria.silva@gmail.com").exists() is False
     assert TemporaryAccessActivationToken.objects.count() == 0
-    assert response.data["temporary_access_status"] == TemporaryAccessRequest.STATUS_PENDING
+    assert "Solicitacao registrada com sucesso." in response.data["message"]
+    assert "temporary_access_status" not in response.data
 
 
 @pytest.mark.django_db
@@ -323,10 +324,13 @@ def test_temporary_access_request_resends_activation_for_approved_unactivated_ac
     assert activation_token.token != captured["code"]
     assert activation_token.matches_code(captured["code"]) is True
     assert captured["to_email"] == temp_user.email
+    assert "Solicitacao processada com sucesso." in response.data["message"]
+    assert "temporary_access_activation_expires_at" not in response.data
+    assert "temporary_access_account_expires_at" not in response.data
 
 
 @pytest.mark.django_db
-def test_temporary_access_verify_returns_pending_approval_message(api_client):
+def test_temporary_access_verify_does_not_reveal_pending_approval_state(api_client):
     TemporaryAccessRequest.objects.create(
         name="Maria Silva",
         email="maria.silva@gmail.com",
@@ -345,7 +349,22 @@ def test_temporary_access_verify_returns_pending_approval_message(api_client):
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "ainda nao aprovada" in response.data["error"]
+    assert "indisponivel" in response.data["error"].lower()
+
+
+@pytest.mark.django_db
+def test_temporary_access_verify_does_not_reveal_user_absence(api_client):
+    response = api_client.post(
+        "/auth/temporary-access/verify/",
+        {
+            "email": "naoexiste@gmail.com",
+            "code": "123456",
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "indisponivel" in response.data["error"].lower()
 
 
 @pytest.mark.django_db

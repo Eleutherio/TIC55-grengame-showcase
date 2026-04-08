@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "../config/api";
 import { notifyUserDataUpdated } from "../utils/auth";
@@ -10,7 +10,7 @@ type MissaoWordleProps = {
     description: string;
     points_value: number;
     content_data: {
-      word?: string;
+      word_length?: number;
       max_attempts?: number;
       hints?: string[] | string;
     };
@@ -25,7 +25,18 @@ type MissaoWordleProps = {
 
 type LetterState = "correct" | "present" | "absent" | "empty";
 
-export default function MissaoWordle({ mission, onComplete: _onComplete, isCompleted, totalMissions }: MissaoWordleProps) {
+type TrailMission = {
+  id: number;
+};
+
+type WordleValidationResponse = {
+  success?: boolean;
+  points_earned?: number;
+  letter_states?: LetterState[];
+  error?: string;
+};
+
+export default function MissaoWordle({ mission, isCompleted, totalMissions }: MissaoWordleProps) {
   const navigate = useNavigate();
   const mobileInputRef = useRef<HTMLInputElement>(null);
   const [showInstructions, setShowInstructions] = useState(!isCompleted);
@@ -33,6 +44,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
   const [showHintsModal, setShowHintsModal] = useState(false);
   const [currentAttempt, setCurrentAttempt] = useState("");
   const [attempts, setAttempts] = useState<string[]>([]);
+  const [attemptEvaluations, setAttemptEvaluations] = useState<LetterState[][]>([]);
   const [gameWon, setGameWon] = useState(false);
   const [usedLetters, setUsedLetters] = useState<Record<string, LetterState>>({});
   const [revealedHints, setRevealedHints] = useState<Record<number, string>>({});
@@ -45,13 +57,13 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
     totalMissions > 0 && mission.order < totalMissions,
   );
   const [isNavigatingToNext, setIsNavigatingToNext] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const [viewportWidth, setViewportWidth] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth : 1280,
   );
 
-  const targetWord = (mission.content_data.word || "").toUpperCase();
   const maxAttempts = mission.content_data.max_attempts || 6;
-  const wordLength = targetWord.length || 5;
+  const wordLength = mission.content_data.word_length || 5;
   const normalizedHints = (() => {
     const rawHints = mission.content_data.hints;
     if (Array.isArray(rawHints)) {
@@ -84,8 +96,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
     ["Z", "X", "C", "V", "B", "N", "M"],
   ];
 
-  const getNextMissionId = async (): Promise<number | null> => {
-
+  const getNextMissionId = useCallback(async (): Promise<number | null> => {
     const token = localStorage.getItem("accessToken");
 
     const trailResponse = await fetch(`${API_URL}/auth/games/${mission.game}/trilha/`, {
@@ -99,12 +110,119 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
     }
 
     const trailData = await trailResponse.json();
-    const missions = trailData.missions || [];
-    const currentIndex = missions.findIndex((m: any) => m.id === mission.id);
+    const missions: TrailMission[] = Array.isArray(trailData.missions)
+      ? trailData.missions
+      : [];
+    const currentIndex = missions.findIndex((m) => m.id === mission.id);
     const nextMission = missions[currentIndex + 1];
 
     return nextMission?.id ?? null;
-  };
+  }, [mission.game, mission.id]);
+
+  const updateUsedLetters = useCallback((word: string, evaluation: LetterState[]) => {
+    setUsedLetters((currentUsedLetters) => {
+      const newUsedLetters = { ...currentUsedLetters };
+      const priority: Record<LetterState, number> = {
+        empty: 0,
+        absent: 1,
+        present: 2,
+        correct: 3,
+      };
+
+      for (let i = 0; i < word.length; i++) {
+        const letter = word[i];
+        const state = evaluation[i];
+        const currentState = newUsedLetters[letter] ?? "empty";
+
+        if (priority[state] > priority[currentState]) {
+          newUsedLetters[letter] = state;
+        }
+      }
+
+      return newUsedLetters;
+    });
+  }, []);
+
+  const handleLetterClick = useCallback((letter: string) => {
+    if (gameWon || isCompleted || attempts.length >= maxAttempts) {
+      return;
+    }
+
+    setSubmitError("");
+    setCurrentAttempt((current) => {
+      if (current.length >= wordLength) {
+        return current;
+      }
+      return current + letter;
+    });
+  }, [attempts.length, gameWon, isCompleted, maxAttempts, wordLength]);
+
+  const handleBackspace = useCallback(() => {
+    if (isCompleted) return;
+    setSubmitError("");
+    setCurrentAttempt((current) => current.slice(0, -1));
+  }, [isCompleted]);
+
+  const handleSubmit = useCallback(async () => {
+    if (currentAttempt.length !== wordLength || gameWon || isValidating) return;
+    setSubmitError("");
+    setIsValidating(true);
+
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(`${API_URL}/auth/missoes/${mission.id}/validar/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ word: currentAttempt }),
+      });
+
+      const data = (await response.json().catch(() => null)) as
+        | WordleValidationResponse
+        | null;
+
+      if (!response.ok) {
+        setSubmitError(data?.error || "NÃ£o foi possÃ­vel validar a tentativa.");
+        return;
+      }
+
+      const normalizedAttempt = currentAttempt.toUpperCase();
+      const evaluation =
+        Array.isArray(data?.letter_states) && data.letter_states.length === wordLength
+          ? data.letter_states
+          : Array.from({ length: wordLength }, (): LetterState => "empty");
+
+      setAttempts((current) => [...current, normalizedAttempt]);
+      setAttemptEvaluations((current) => [...current, evaluation]);
+      updateUsedLetters(normalizedAttempt, evaluation);
+
+      if (data?.success) {
+        setGameWon(true);
+        setShowVictory(true);
+        if (!isCompleted) {
+          setEarnedPoints(data.points_earned || 0);
+          notifyUserDataUpdated();
+        }
+      }
+
+      setCurrentAttempt("");
+    } catch (error) {
+      console.error("Erro ao validar wordle:", error);
+      setSubmitError("Erro de conexÃ£o ao validar a tentativa.");
+    } finally {
+      setIsValidating(false);
+    }
+  }, [
+    currentAttempt,
+    gameWon,
+    isCompleted,
+    isValidating,
+    mission.id,
+    updateUsedLetters,
+    wordLength,
+  ]);
 
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -132,7 +250,16 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
 
     window.addEventListener("keydown", handleKeyPress);
     return () => window.removeEventListener("keydown", handleKeyPress);
-  }, [currentAttempt, gameWon, attempts, maxAttempts, wordLength]);
+  }, [
+    attempts.length,
+    currentAttempt.length,
+    gameWon,
+    handleBackspace,
+    handleLetterClick,
+    handleSubmit,
+    maxAttempts,
+    wordLength,
+  ]);
 
   useEffect(() => {
     const handleResize = () => setViewportWidth(window.innerWidth);
@@ -159,74 +286,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
     return () => {
       isMounted = false;
     };
-  }, [mission.game, mission.id, mission.order, totalMissions]);
-
-  const evaluateAttempt = (word: string): LetterState[] => {
-    const states: LetterState[] = Array.from(
-      { length: wordLength },
-      () => "absent",
-    );
-    const remainingLetters: Record<string, number> = {};
-
-    // Primeira passagem: marca acertos exatos e contabiliza letras restantes.
-    for (let i = 0; i < wordLength; i++) {
-      const attemptLetter = word[i];
-      const targetLetter = targetWord[i];
-
-      if (attemptLetter === targetLetter) {
-        states[i] = "correct";
-      } else {
-        remainingLetters[targetLetter] = (remainingLetters[targetLetter] || 0) + 1;
-      }
-    }
-
-    // Segunda passagem: marca presentes respeitando quantidade restante.
-    for (let i = 0; i < wordLength; i++) {
-      if (states[i] === "correct") continue;
-
-      const attemptLetter = word[i];
-      const remainingCount = remainingLetters[attemptLetter] || 0;
-      if (remainingCount > 0) {
-        states[i] = "present";
-        remainingLetters[attemptLetter] = remainingCount - 1;
-      }
-    }
-
-    return states;
-  };
-
-  const updateUsedLetters = (word: string, evaluation: LetterState[]) => {
-    const newUsedLetters = { ...usedLetters };
-    const priority: Record<LetterState, number> = {
-      empty: 0,
-      absent: 1,
-      present: 2,
-      correct: 3,
-    };
-
-    for (let i = 0; i < word.length; i++) {
-      const letter = word[i];
-      const state = evaluation[i];
-      const currentState = newUsedLetters[letter] ?? "empty";
-
-      if (priority[state] > priority[currentState]) {
-        newUsedLetters[letter] = state;
-      }
-    }
-
-    setUsedLetters(newUsedLetters);
-  };
-
-  const handleLetterClick = (letter: string) => {
-    if (gameWon || attempts.length >= maxAttempts || currentAttempt.length >= wordLength) {
-      return;
-    }
-    setCurrentAttempt(currentAttempt + letter);
-  };
-
-  const handleBackspace = () => {
-    setCurrentAttempt(currentAttempt.slice(0, -1));
-  };
+  }, [getNextMissionId, mission.order, totalMissions]);
 
   const handleRevealHint = async (hintIndex: number) => {
     if (isRevealingHintIndex !== null) return;
@@ -279,57 +339,11 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
       }
 
       notifyUserDataUpdated();
-    } catch (error) {
+    } catch {
       setHintError("Erro de conexão ao revelar a dica.");
     } finally {
       setIsRevealingHintIndex(null);
     }
-  };
-
-  const handleSubmit = async () => {
-    if (currentAttempt.length !== wordLength || gameWon || isValidating) return;
-
-    const attemptEvaluation = evaluateAttempt(currentAttempt);
-    const newAttempts = [...attempts, currentAttempt];
-    setAttempts(newAttempts);
-    updateUsedLetters(currentAttempt, attemptEvaluation);
-
-    if (currentAttempt === targetWord) {
-      setGameWon(true);
-      setShowVictory(true);
-
-      if (!isCompleted) {
-        setIsValidating(true);
-
-        try {
-      
-          const token = localStorage.getItem("accessToken");
-
-          const response = await fetch(`${API_URL}/auth/missoes/${mission.id}/validar/`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ word: currentAttempt }),
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            setEarnedPoints(data.points_earned || 0);
-            notifyUserDataUpdated();
-          } else {
-            console.error("Erro ao validar wordle");
-          }
-        } catch (error) {
-          console.error("Erro ao validar wordle:", error);
-        } finally {
-          setIsValidating(false);
-        }
-      }
-    }
-
-    setCurrentAttempt("");
   };
 
   const handleNewGame = () => {
@@ -338,10 +352,12 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
       return;
     }
     setAttempts([]);
+    setAttemptEvaluations([]);
     setCurrentAttempt("");
     setGameWon(false);
     setShowVictory(false);
     setUsedLetters({});
+    setSubmitError("");
   };
 
   const handleBack = () => {
@@ -415,7 +431,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
               color: "#856404",
               fontSize: "14px",
             }}>
-              Você pode jogar novamente, mas não ganhará pontos extras.
+              Esta missão já foi concluída e não aceita novas tentativas.
             </p>
           </div>
         </div>
@@ -496,6 +512,23 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
         }}>
           {mission.order} de {totalMissions} Conteúdos
         </p>
+
+        {submitError && (
+          <div
+            style={{
+              marginTop: "12px",
+              padding: "10px 12px",
+              backgroundColor: "#FDECEC",
+              border: "1px solid #F5B5B5",
+              borderRadius: "8px",
+              color: "#8F1D1D",
+              fontSize: "13px",
+              fontWeight: "600",
+            }}
+          >
+            {submitError}
+          </div>
+        )}
       </div>
 
       <div style={{
@@ -581,7 +614,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                   <button
                     key={letter}
                     onClick={() => handleLetterClick(letter)}
-                    disabled={gameWon}
+                    disabled={gameWon || isCompleted}
                     style={{
                       minWidth: `${keyboardKeyWidth}px`,
                       height: `${keyboardKeyHeight}px`,
@@ -592,12 +625,12 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                       borderRadius: "6px",
                       fontSize: `${keyboardKeyFontSize}px`,
                       fontWeight: "700",
-                      cursor: gameWon ? "not-allowed" : "pointer",
+                      cursor: gameWon || isCompleted ? "not-allowed" : "pointer",
                       transition: "all 0.2s",
                       textTransform: "uppercase",
                     }}
                     onMouseOver={(e) => {
-                      if (!gameWon) {
+                      if (!gameWon && !isCompleted) {
                         e.currentTarget.style.opacity = "0.8";
                       }
                     }}
@@ -631,6 +664,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                   .toUpperCase()
                   .replace(/[^A-Z]/g, "")
                   .slice(0, wordLength);
+                setSubmitError("");
                 setCurrentAttempt(normalized);
               }}
               onKeyDown={(event) => {
@@ -652,15 +686,14 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
             {Array.from({ length: maxAttempts }).map((_, rowIndex) => {
               const isCurrentRow = rowIndex === attempts.length;
               const attempt = attempts[rowIndex] || (isCurrentRow ? currentAttempt : "");
-              const attemptEvaluation =
-                rowIndex < attempts.length ? evaluateAttempt(attempt) : [];
+              const attemptEvaluation = attemptEvaluations[rowIndex] || [];
 
               return (
                 <div key={rowIndex} style={{
                   display: "flex",
                   gap: `${tileGap}px`,
                   justifyContent: "center",
-                  cursor: isCurrentRow && !gameWon ? "text" : "default",
+                  cursor: isCurrentRow && !gameWon && !isCompleted ? "text" : "default",
                 }}>
                   {Array.from({ length: wordLength }).map((_, colIndex) => {
                     const letter = attempt[colIndex] || "";
@@ -677,7 +710,7 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
                       <div
                         key={colIndex}
                         onClick={() => {
-                          if (isCurrentRow && !gameWon) {
+                          if (isCurrentRow && !gameWon && !isCompleted) {
                             mobileInputRef.current?.focus();
                           }
                         }}
@@ -747,16 +780,22 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
           }}>
             <button
               onClick={handleBackspace}
-              disabled={gameWon || currentAttempt.length === 0}
+              disabled={gameWon || isCompleted || currentAttempt.length === 0}
               style={{
                 padding: isMobile ? "10px 16px" : "12px 24px",
-                backgroundColor: gameWon || currentAttempt.length === 0 ? "#cccccc" : "#F44336",
+                backgroundColor:
+                  gameWon || isCompleted || currentAttempt.length === 0
+                    ? "#cccccc"
+                    : "#F44336",
                 color: "white",
                 border: "none",
                 borderRadius: "8px",
                 fontSize: isMobile ? "13px" : "14px",
                 fontWeight: "600",
-                cursor: gameWon || currentAttempt.length === 0 ? "not-allowed" : "pointer",
+                cursor:
+                  gameWon || isCompleted || currentAttempt.length === 0
+                    ? "not-allowed"
+                    : "pointer",
                 transition: "all 0.2s",
                 minWidth: isMobile ? "200px" : "auto",
               }}
@@ -765,21 +804,38 @@ export default function MissaoWordle({ mission, onComplete: _onComplete, isCompl
             </button>
             <button
               onClick={handleSubmit}
-              disabled={currentAttempt.length !== wordLength || gameWon}
+              disabled={
+                currentAttempt.length !== wordLength ||
+                gameWon ||
+                isCompleted ||
+                isValidating
+              }
               style={{
                 padding: isMobile ? "10px 20px" : "12px 32px",
-                backgroundColor: currentAttempt.length === wordLength && !gameWon ? "#4CAF50" : "#cccccc",
+                backgroundColor:
+                  currentAttempt.length === wordLength &&
+                  !gameWon &&
+                  !isCompleted &&
+                  !isValidating
+                    ? "#4CAF50"
+                    : "#cccccc",
                 color: "white",
                 border: "none",
                 borderRadius: "8px",
                 fontSize: isMobile ? "13px" : "14px",
                 fontWeight: "600",
-                cursor: currentAttempt.length === wordLength && !gameWon ? "pointer" : "not-allowed",
+                cursor:
+                  currentAttempt.length === wordLength &&
+                  !gameWon &&
+                  !isCompleted &&
+                  !isValidating
+                    ? "pointer"
+                    : "not-allowed",
                 transition: "all 0.2s",
                 minWidth: isMobile ? "200px" : "auto",
               }}
             >
-              {"\u21B5"} Enter
+              {isValidating ? "Validando..." : "\u21B5 Enter"}
             </button>
           </div>
         </div>

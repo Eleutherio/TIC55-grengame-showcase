@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 import pytest
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework import status
 from core.models import Game, Mission, MissionCompletions, WordleHintUsage
@@ -106,7 +109,7 @@ def create_video_mission(db, create_game):
             points_value=points,
             order=1,
             is_active=True,
-            content_data={'video_url': 'https://youtube.com/watch?v=test'}
+            content_data={'video_url': 'https://youtube.com/watch?v=test', 'duration': 1}
         )
         return mission
     return make_video
@@ -418,6 +421,15 @@ class TestVideoLeituraPoints:
         mission = create_video_mission(points=50)
         
         client.post(f'/auth/missoes/{mission.id}/iniciar/')
+        MissionCompletions.objects.filter(user=user, mission=mission).update(
+            started_at=timezone.now() - timedelta(minutes=2)
+        )
+        validate_response = client.post(
+            f'/auth/missoes/{mission.id}/validar/',
+            {'playback_completed': True},
+            format='json',
+        )
+        assert validate_response.status_code == status.HTTP_200_OK
         
         response = client.patch(f'/auth/missoes/{mission.id}/completar/')
         
@@ -434,6 +446,15 @@ class TestVideoLeituraPoints:
         mission = create_video_mission(points=50)
         
         client.post(f'/auth/missoes/{mission.id}/iniciar/')
+        MissionCompletions.objects.filter(user=user, mission=mission).update(
+            started_at=timezone.now() - timedelta(minutes=2)
+        )
+        validate_response = client.post(
+            f'/auth/missoes/{mission.id}/validar/',
+            {'playback_completed': True},
+            format='json',
+        )
+        assert validate_response.status_code == status.HTTP_200_OK
         
         # Primeira vez
         response1 = client.patch(f'/auth/missoes/{mission.id}/completar/')
@@ -455,3 +476,18 @@ class TestVideoLeituraPoints:
         
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert 'iniciou' in response.data['error'].lower()
+
+    def test_video_must_validate_before_completing(self, authenticated_client, create_video_mission):
+        """Mesmo após iniciar, vídeo não pontua sem validação server-side"""
+        client, user = authenticated_client()
+        mission = create_video_mission(points=50)
+
+        client.post(f'/auth/missoes/{mission.id}/iniciar/')
+        MissionCompletions.objects.filter(user=user, mission=mission).update(
+            started_at=timezone.now() - timedelta(minutes=2)
+        )
+
+        response = client.patch(f'/auth/missoes/{mission.id}/completar/')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'validado' in response.data['error'].lower()

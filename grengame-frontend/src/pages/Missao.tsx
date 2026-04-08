@@ -36,9 +36,16 @@ type Mission = {
 
 type MissionCompletion = {
   completed: boolean;
+  status?: string;
   points_earned: number;
   stars_earned: number;
+  started_at?: string | null;
   completed_at: string | null;
+  consumption_validated_at?: string | null;
+};
+
+type TrailMission = {
+  id: number;
 };
 
 export default function Missao() {
@@ -157,12 +164,38 @@ export default function Missao() {
     }
   };
 
-  const handleComplete = async () => {
-    if (!missionId) return;
+  const handleComplete = async (
+    validationPayload?: Record<string, unknown>,
+  ) => {
+    if (!missionId || !mission) return;
 
     try {
-
       const token = localStorage.getItem("accessToken");
+
+      if (
+        mission.mission_type === "video" ||
+        mission.mission_type === "reading"
+      ) {
+        const validationResponse = await fetch(
+          `${API_URL}/auth/missoes/${missionId}/validar/`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(validationPayload ?? {}),
+          },
+        );
+
+        const validationData = await validationResponse.json().catch(() => ({}));
+        if (!validationResponse.ok) {
+          throw new Error(
+            validationData.error ||
+              `Erro ao validar missão: ${validationResponse.status}`,
+          );
+        }
+      }
 
       const response = await fetch(`${API_URL}/auth/missoes/${missionId}/completar/`, {
         method: "PATCH",
@@ -185,9 +218,13 @@ export default function Missao() {
 
       setCompletion({
         completed: true,
+        status: "completed",
         points_earned: earned,
         stars_earned: 3,
+        started_at: completion?.started_at || new Date().toISOString(),
         completed_at: new Date().toISOString(),
+        consumption_validated_at:
+          completion?.consumption_validated_at || new Date().toISOString(),
       });
       notifyUserDataUpdated();
 
@@ -197,31 +234,31 @@ export default function Missao() {
         },
       });
 
-      if (trailResponse.ok) {
-        const trailData = await trailResponse.json();
-        const missions = trailData.missions || [];
+        if (trailResponse.ok) {
+          const trailData = await trailResponse.json();
+          const missions: TrailMission[] = Array.isArray(trailData.missions)
+            ? trailData.missions
+            : [];
 
-        const currentIndex = missions.findIndex((m: any) => m.id === mission?.id);
-        const nextMission = missions[currentIndex + 1];
+          const currentIndex = missions.findIndex((m) => m.id === mission.id);
+          const nextMission = missions[currentIndex + 1];
 
         setShowCompletionModal(false);
         if (nextMission) {
           navigate(`/app/missao/${nextMission.id}`);
         } else {
-          navigate(`/app/trilhas/${mission?.game}`);
+          navigate(`/app/trilhas/${mission.game}`);
         }
       } else {
         setShowCompletionModal(false);
-        navigate(`/app/trilhas/${mission?.game}`);
+        navigate(`/app/trilhas/${mission.game}`);
       }
     } catch (err) {
-      console.error("Erro ao completar missão:", err);
-
-      // Remove o modal se estava aparecendo
       setShowCompletionModal(false);
-
-      // Navega de volta para a trilha em caso de erro
-      navigate(`/app/trilhas/${mission?.game}`);
+      console.error("Erro ao completar missão:", err);
+      throw err instanceof Error
+        ? err
+        : new Error("Erro desconhecido ao completar missão.");
     }
   };
 

@@ -267,6 +267,7 @@ def test_mission_completion_triggers_badges_and_is_idempotent(
         mission=mission,
         status="in_progress",
         points_earned=0,
+        consumption_validated_at=timezone.now(),
     )
 
     api_client.force_authenticate(user=player_user)

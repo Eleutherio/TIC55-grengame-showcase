@@ -52,7 +52,10 @@ def missions(db, game):
             mission_type='video',
             order=i,
             points_value=100,
-            content_data={'video_url': f'http://example.com/video{i+1}.mp4'},
+            content_data={
+                'video_url': f'http://example.com/video{i+1}.mp4',
+                'duration': 1,
+            },
             is_active=True
         ) for i in range(3)
     ]
@@ -167,7 +170,8 @@ class TestMissionCompletionAutoUpdate:
             user=user,
             mission=missions[0],
             status='in_progress',
-            points_earned=0
+            points_earned=0,
+            consumption_validated_at=timezone.now(),
         )
         
         # Completar missão via API
@@ -188,6 +192,10 @@ class TestMissionCompletionAutoUpdate:
         # Iniciar e completar última missão
         MissionCompletions.objects.create(user=user, mission=missions[2], status='in_progress', points_earned=0)
         
+        MissionCompletions.objects.filter(user=user, mission=missions[2]).update(
+            consumption_validated_at=timezone.now()
+        )
+
         response = authenticated_client.patch(f'/auth/missoes/{missions[2].id}/completar/')
         
         assert response.status_code == status.HTTP_200_OK

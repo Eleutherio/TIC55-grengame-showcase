@@ -19,7 +19,7 @@ type MissaoLeituraProps = {
     game_name?: string;
     order: number;
   };
-  onComplete: () => void;
+  onComplete: (validationPayload?: Record<string, unknown>) => Promise<void>;
   isCompleted: boolean;
   completion?: {
     completed: boolean;
@@ -28,12 +28,17 @@ type MissaoLeituraProps = {
   totalMissions: number;
 };
 
-export default function MissaoLeitura({ mission, onComplete, isCompleted, completion: _completion, totalMissions }: MissaoLeituraProps) {
+type TrailMission = {
+  id: number;
+};
+
+export default function MissaoLeitura({ mission, onComplete, isCompleted, totalMissions }: MissaoLeituraProps) {
   const navigate = useNavigate();
   const [hasReadAll, setHasReadAll] = useState(isCompleted);
   const [hasScrolledToEnd, setHasScrolledToEnd] = useState(isCompleted);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(
     typeof window !== "undefined" ? window.innerWidth <= 768 : false,
   );
@@ -42,7 +47,7 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
 
   const textContent = mission.content_data.text || "";
   const tip = mission.content_data.tip;
-  const minReadTimeMinutes = mission.content_data.min_read_time || 0; // em minutos
+  const minReadTimeMinutes = mission.content_data.min_read_time || 1; // em minutos
   const minReadTimeSeconds = minReadTimeMinutes * 60; // converter para segundos
   const imageUrl = mission.content_data.image_url || "";
   const imageAlt =
@@ -59,18 +64,6 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const handleScroll = () => {
-    if (hasScrolledToEnd || isCompleted) return;
-
-    const scrollTop = window.scrollY;
-    const windowHeight = window.innerHeight;
-    const documentHeight = document.documentElement.scrollHeight;
-
-    if (scrollTop + windowHeight >= documentHeight * 0.9) {
-      setHasScrolledToEnd(true);
-    }
   };
 
   // Timer para contar tempo de leitura
@@ -91,9 +84,21 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
   }, [isCompleted, minReadTimeSeconds, hasScrolledToEnd]);
 
   useEffect(() => {
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [hasReadAll, isCompleted]);
+    const onScroll = () => {
+      if (hasScrolledToEnd || isCompleted) return;
+
+      const scrollTop = window.scrollY;
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+
+      if (scrollTop + windowHeight >= documentHeight * 0.9) {
+        setHasScrolledToEnd(true);
+      }
+    };
+
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [hasScrolledToEnd, isCompleted]);
 
   useEffect(() => {
     if (isCompleted) {
@@ -115,49 +120,55 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
   const helperMutedTextColor = isMobile ? "#1F2937" : "#4B5563";
 
   const handleNext = async () => {
-    // Se já completou OU se já leu tudo
-    if (isCompleted || hasReadAll) {
-      // Primeiro tenta completar se ainda não completou
-      if (!isCompleted && hasReadAll) {
-        setIsCompleting(true);
-        try {
-          await onComplete();
-        } catch (error) {
-          console.error("Erro ao completar missão:", error);
-        } finally {
-          setIsCompleting(false);
-        }
-      }
-
-      // Depois busca próxima missão e navega
+    if (!isCompleted && hasReadAll) {
+      setIsCompleting(true);
       try {
+        setActionError(null);
+        await onComplete({ scroll_completed: true });
+        return;
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Não foi possível validar a conclusão da leitura.";
+        setActionError(message);
+        console.error("Erro ao completar missão:", error);
+        return;
+      } finally {
+        setIsCompleting(false);
+      }
+    }
 
-        const token = localStorage.getItem("accessToken");
+    if (!isCompleted) return;
 
-        const trailResponse = await fetch(`${API_URL}/auth/games/${mission.game}/trilha/`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+    try {
+      const token = localStorage.getItem("accessToken");
 
-        if (trailResponse.ok) {
-          const trailData = await trailResponse.json();
-          const missions = trailData.missions || [];
-          const currentIndex = missions.findIndex((m: any) => m.id === mission.id);
+      const trailResponse = await fetch(`${API_URL}/auth/games/${mission.game}/trilha/`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
-          const nextMission = missions[currentIndex + 1];
-          if (nextMission && nextMission.id) {
-            navigate(`/app/missao/${nextMission.id}`);
-          } else {
-            navigate(`/app/trilhas/${mission.game}`);
-          }
+      if (trailResponse.ok) {
+        const trailData = await trailResponse.json();
+        const missions: TrailMission[] = Array.isArray(trailData.missions)
+          ? trailData.missions
+          : [];
+        const currentIndex = missions.findIndex((m) => m.id === mission.id);
+
+        const nextMission = missions[currentIndex + 1];
+        if (nextMission && nextMission.id) {
+          navigate(`/app/missao/${nextMission.id}`);
         } else {
           navigate(`/app/trilhas/${mission.game}`);
         }
-      } catch (error) {
-        console.error("Erro ao buscar próxima missão:", error);
+      } else {
         navigate(`/app/trilhas/${mission.game}`);
       }
+    } catch (error) {
+      console.error("Erro ao buscar próxima missão:", error);
+      navigate(`/app/trilhas/${mission.game}`);
     }
   };
 
@@ -208,6 +219,23 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, comple
               Você pode reler, mas não ganhará pontos extras.
             </p>
           </div>
+        </div>
+      )}
+      {actionError && (
+        <div
+          style={{
+            maxWidth: "1200px",
+            margin: "0 auto 16px",
+            padding: "14px 18px",
+            backgroundColor: "#FDECEC",
+            border: "1px solid #F5B5B5",
+            borderRadius: "10px",
+            color: "#8F1D1D",
+            fontSize: "14px",
+            fontWeight: 600,
+          }}
+        >
+          {actionError}
         </div>
       )}
       <div style={{

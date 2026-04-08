@@ -1,6 +1,7 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
+from django.utils import timezone
 
 from .verification_codes import (
     build_unusable_verification_code,
@@ -253,7 +254,21 @@ class MissionCompletions(models.Model):
         related_name='completions',
         verbose_name="Missão"
     )
-    completed_at = models.DateTimeField(auto_now_add=True, null=True, blank=True, verbose_name="Concluída em")
+    started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Iniciada em",
+    )
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Concluída em",
+    )
+    consumption_validated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Consumo validado em",
+    )
     points_earned = models.IntegerField(
         default=0,
         verbose_name="Pontos Ganhos",
@@ -280,6 +295,14 @@ class MissionCompletions(models.Model):
 
     def __str__(self):
         return f"{self.user.email} - {self.mission.title} ({self.status})"
+
+    def save(self, *args, **kwargs):
+        now = timezone.now()
+        if self.started_at is None:
+            self.started_at = now
+        if self.status == "completed" and self.completed_at is None:
+            self.completed_at = now
+        super().save(*args, **kwargs)
 
 
 class WordleHintUsage(models.Model):

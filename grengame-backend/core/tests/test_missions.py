@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -92,9 +94,9 @@ def create_mission(db, create_game):
             elif mission_type == "game":
                 content_data = {"word": "CICLO", "max_attempts": 6}
             elif mission_type == "video":
-                content_data = {"url": "https://example.com/video.mp4"}
+                content_data = {"url": "https://example.com/video.mp4", "duration": 1}
             else:
-                content_data = {"text": "Conteudo"}
+                content_data = {"text": "Conteudo", "min_read_time": 1}
 
         return Mission.objects.create(
             game=target_game,
@@ -218,6 +220,72 @@ def test_user_sees_only_active_missions(authenticated_client, create_mission):
 
 
 @pytest.mark.django_db
+def test_user_mission_detail_hides_quiz_correct_answers(authenticated_client, create_mission):
+    mission = create_mission(
+        mission_type="quiz",
+        content_data={
+            "questions": [
+                {
+                    "id": 1,
+                    "question": "Pergunta 1?",
+                    "options": ["A", "B"],
+                    "correct_answer": 1,
+                }
+            ]
+        },
+    )
+    client, _ = authenticated_client()
+
+    response = client.get(f"/auth/missoes/{mission.id}/")
+
+    assert response.status_code == status.HTTP_200_OK
+    questions = response.data["content_data"]["questions"]
+    assert questions[0]["question"] == "Pergunta 1?"
+    assert questions[0]["options"] == ["A", "B"]
+    assert "correct_answer" not in questions[0]
+
+
+@pytest.mark.django_db
+def test_user_mission_detail_hides_wordle_secret(authenticated_client, create_mission):
+    mission = create_mission(
+        mission_type="game",
+        content_data={"word": "PRAIA", "max_attempts": 6, "hints": ["Dica 1"]},
+    )
+    client, _ = authenticated_client()
+
+    response = client.get(f"/auth/missoes/{mission.id}/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert "word" not in response.data["content_data"]
+    assert response.data["content_data"]["word_length"] == 5
+    assert response.data["content_data"]["hints"] == ["Dica 1"]
+
+
+@pytest.mark.django_db
+def test_admin_mission_detail_keeps_sensitive_content(authenticated_client, create_admin, create_mission):
+    admin = create_admin()
+    mission = create_mission(
+        mission_type="quiz",
+        content_data={
+            "questions": [
+                {
+                    "id": 1,
+                    "question": "Pergunta 1?",
+                    "options": ["A", "B"],
+                    "correct_answer": 1,
+                }
+            ]
+        },
+    )
+    client, _ = authenticated_client(user=admin)
+
+    response = client.get(f"/auth/missoes/{mission.id}/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["content_data"]["questions"][0]["correct_answer"] == 1
+
+
+@pytest.mark.django_db
 def test_admin_sees_all_missions(authenticated_client, create_admin, create_mission):
     create_mission(title="Missao Ativa", order=1, is_active=True)
     create_mission(title="Missao Inativa", order=2, is_active=False)
@@ -287,6 +355,16 @@ def test_user_can_complete_mission(authenticated_client, create_mission):
     mission = create_mission(points_value=150, mission_type="video", order=1)
     client, user = authenticated_client()
     client.post(f"/auth/missoes/{mission.id}/iniciar/")
+    MissionCompletions.objects.filter(user=user, mission=mission).update(
+        started_at=timezone.now() - timedelta(minutes=2)
+    )
+
+    validate_response = client.post(
+        f"/auth/missoes/{mission.id}/validar/",
+        {"playback_completed": True},
+        format="json",
+    )
+    assert validate_response.status_code == status.HTTP_200_OK
 
     response = client.patch(f"/auth/missoes/{mission.id}/completar/")
 
@@ -311,8 +389,16 @@ def test_cannot_complete_without_starting(authenticated_client, create_mission):
 @pytest.mark.django_db
 def test_cannot_complete_mission_twice(authenticated_client, create_mission):
     mission = create_mission(points_value=100, mission_type="video")
-    client, _ = authenticated_client()
+    client, user = authenticated_client()
     client.post(f"/auth/missoes/{mission.id}/iniciar/")
+    MissionCompletions.objects.filter(user=user, mission=mission).update(
+        started_at=timezone.now() - timedelta(minutes=2)
+    )
+    client.post(
+        f"/auth/missoes/{mission.id}/validar/",
+        {"playback_completed": True},
+        format="json",
+    )
 
     first = client.patch(f"/auth/missoes/{mission.id}/completar/")
     second = client.patch(f"/auth/missoes/{mission.id}/completar/")
@@ -325,8 +411,16 @@ def test_cannot_complete_mission_twice(authenticated_client, create_mission):
 @pytest.mark.django_db
 def test_cannot_complete_inactive_mission(authenticated_client, create_mission):
     mission = create_mission(mission_type="video")
-    client, _ = authenticated_client()
+    client, user = authenticated_client()
     client.post(f"/auth/missoes/{mission.id}/iniciar/")
+    MissionCompletions.objects.filter(user=user, mission=mission).update(
+        started_at=timezone.now() - timedelta(minutes=2)
+    )
+    client.post(
+        f"/auth/missoes/{mission.id}/validar/",
+        {"playback_completed": True},
+        format="json",
+    )
 
     mission.is_active = False
     mission.save(update_fields=["is_active"])
@@ -335,6 +429,53 @@ def test_cannot_complete_inactive_mission(authenticated_client, create_mission):
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "mais ativa" in response.data["error"].lower()
+
+
+@pytest.mark.django_db
+def test_cannot_complete_video_without_server_validation(authenticated_client, create_mission):
+    mission = create_mission(points_value=100, mission_type="video")
+    client, user = authenticated_client()
+    client.post(f"/auth/missoes/{mission.id}/iniciar/")
+    MissionCompletions.objects.filter(user=user, mission=mission).update(
+        started_at=timezone.now() - timedelta(minutes=2)
+    )
+
+    response = client.patch(f"/auth/missoes/{mission.id}/completar/")
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "validado" in response.data["error"].lower()
+
+
+@pytest.mark.django_db
+def test_validate_video_requires_minimum_elapsed_time(authenticated_client, create_mission):
+    mission = create_mission(points_value=100, mission_type="video")
+    client, user = authenticated_client()
+    client.post(f"/auth/missoes/{mission.id}/iniciar/")
+    MissionCompletions.objects.filter(user=user, mission=mission).update(
+        started_at=timezone.now() - timedelta(seconds=30)
+    )
+
+    response = client.post(
+        f"/auth/missoes/{mission.id}/validar/",
+        {"playback_completed": True},
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "tempo mínimo" in response.data["error"].lower()
+    assert response.data["remaining_seconds"] > 0
+
+
+@pytest.mark.django_db
+def test_cannot_complete_quiz_via_complete_endpoint(authenticated_client, create_mission):
+    mission = create_mission(mission_type="quiz")
+    client, _ = authenticated_client()
+    client.post(f"/auth/missoes/{mission.id}/iniciar/")
+
+    response = client.patch(f"/auth/missoes/{mission.id}/completar/")
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "validação" in response.data["error"].lower()
 
 
 @pytest.mark.django_db
@@ -509,6 +650,13 @@ def test_validate_wordle_correct_word(authenticated_client, create_mission):
     assert response.data["success"] is True
     assert response.data["points_earned"] == 150
     assert response.data["status"] == "completed"
+    assert response.data["letter_states"] == [
+        "correct",
+        "correct",
+        "correct",
+        "correct",
+        "correct",
+    ]
 
 
 @pytest.mark.django_db
@@ -531,6 +679,13 @@ def test_validate_wordle_incorrect_word(authenticated_client, create_mission):
     assert response.data["success"] is False
     assert response.data["points_earned"] == 0
     assert response.data["status"] == "in_progress"
+    assert response.data["letter_states"] == [
+        "absent",
+        "absent",
+        "absent",
+        "absent",
+        "absent",
+    ]
 
 
 @pytest.mark.django_db

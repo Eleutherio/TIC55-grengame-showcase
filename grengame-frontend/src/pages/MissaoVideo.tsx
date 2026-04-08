@@ -2,9 +2,38 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "../config/api";
 
+type YouTubePlayer = {
+  destroy: () => void;
+};
+
+type YouTubePlayerStateEvent = {
+  data: number;
+};
+
+type YouTubePlayerConfig = {
+  videoId: string;
+  playerVars: Record<string, number>;
+  events: {
+    onStateChange: (event: YouTubePlayerStateEvent) => void;
+    onReady: () => void;
+    onError: () => void;
+  };
+};
+
+type YouTubeNamespace = {
+  Player: new (
+    element: HTMLElement,
+    config: YouTubePlayerConfig,
+  ) => YouTubePlayer;
+};
+
+type TrailMission = {
+  id: number;
+};
+
 declare global {
   interface Window {
-    YT: any;
+    YT?: YouTubeNamespace;
     onYouTubeIframeAPIReady: () => void;
   }
 }
@@ -23,7 +52,7 @@ type MissaoVideoProps = {
     game_name?: string;
     order: number;
   };
-  onComplete: () => void;
+  onComplete: (validationPayload?: Record<string, unknown>) => Promise<void>;
   isCompleted: boolean;
   completion?: {
     completed: boolean;
@@ -32,12 +61,13 @@ type MissaoVideoProps = {
   totalMissions: number;
 };
 
-export default function MissaoVideo({ mission, onComplete, isCompleted, completion: _completion, totalMissions }: MissaoVideoProps) {
+export default function MissaoVideo({ mission, onComplete, isCompleted, totalMissions }: MissaoVideoProps) {
   const navigate = useNavigate();
   const [videoWatched, setVideoWatched] = useState(isCompleted);
   const [loadError, setLoadError] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
-  const playerRef = useRef<any>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const playerRef = useRef<YouTubePlayer | null>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
 
   const videoUrl = mission.content_data.url || mission.content_data.video_url || "";
@@ -97,7 +127,7 @@ export default function MissaoVideo({ mission, onComplete, isCompleted, completi
     }
 
     function createPlayer() {
-      if (!playerContainerRef.current) return;
+      if (!playerContainerRef.current || !window.YT) return;
 
       playerRef.current = new window.YT.Player(playerContainerRef.current, {
         videoId: videoId,
@@ -108,7 +138,7 @@ export default function MissaoVideo({ mission, onComplete, isCompleted, completi
           rel: 0,
         },
         events: {
-          onStateChange: (event: any) => {
+          onStateChange: (event) => {
             if (event.data === 0) {
               setVideoWatched(true);
             }
@@ -142,8 +172,10 @@ export default function MissaoVideo({ mission, onComplete, isCompleted, completi
 
         if (trailResponse.ok) {
           const trailData = await trailResponse.json();
-          const missions = trailData.missions || [];
-          const currentIndex = missions.findIndex((m: any) => m.id === mission.id);
+          const missions: TrailMission[] = Array.isArray(trailData.missions)
+            ? trailData.missions
+            : [];
+          const currentIndex = missions.findIndex((m) => m.id === mission.id);
           const nextMission = missions[currentIndex + 1];
 
           if (nextMission) {
@@ -161,7 +193,14 @@ export default function MissaoVideo({ mission, onComplete, isCompleted, completi
     } else if (videoWatched) {
       setIsCompleting(true);
       try {
-        await onComplete();
+        setActionError(null);
+        await onComplete({ playback_completed: true });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Não foi possível validar a conclusão do vídeo.";
+        setActionError(message);
       } finally {
         setIsCompleting(false);
       }
@@ -212,6 +251,24 @@ export default function MissaoVideo({ mission, onComplete, isCompleted, completi
               Você pode assistir novamente, mas não ganhará pontos extras.
             </p>
           </div>
+        </div>
+      )}
+
+      {actionError && (
+        <div
+          style={{
+            maxWidth: "1200px",
+            margin: "0 auto 16px",
+            padding: "14px 18px",
+            backgroundColor: "#FDECEC",
+            border: "1px solid #F5B5B5",
+            borderRadius: "10px",
+            color: "#8F1D1D",
+            fontSize: "14px",
+            fontWeight: 600,
+          }}
+        >
+          {actionError}
         </div>
       )}
 
