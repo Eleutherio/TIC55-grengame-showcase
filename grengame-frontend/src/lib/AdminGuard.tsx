@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import { Navigate } from "react-router-dom";
-import { hasValidToken, isAdmin } from "../utils/auth";
+import { canAccessAdminConsole, hasValidToken } from "../utils/auth";
 
 type GuardProps = {
   element: ReactElement;
@@ -11,7 +11,7 @@ export function AdminGuard({ element }: GuardProps): ReactElement {
     return <Navigate to="/login" replace />;
   }
 
-  if (!isAdmin()) {
+  if (!canAccessAdminConsole()) {
     return <Navigate to="/app/cursos" replace />;
   }
 

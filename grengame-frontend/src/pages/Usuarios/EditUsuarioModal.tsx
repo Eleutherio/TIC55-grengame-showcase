@@ -71,8 +71,8 @@ export default function EditUsuarioModal({
       return;
     }
 
-    if (senhaTrimmed && senhaTrimmed.length < 6) {
-      setErro("Senha deve ter pelo menos 6 caracteres.");
+    if (senhaTrimmed && senhaTrimmed.length < 8) {
+      setErro("Senha deve ter pelo menos 8 caracteres.");
       return;
     }
 

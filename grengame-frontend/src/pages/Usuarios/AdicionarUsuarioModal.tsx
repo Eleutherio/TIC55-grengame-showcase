@@ -59,8 +59,8 @@ export default function AdicionarUsuarioModal({
       return;
     }
 
-    if (!senhaTrimmed || senhaTrimmed.length < 6) {
-      setErro("Senha deve ter pelo menos 6 caracteres.");
+    if (!senhaTrimmed || senhaTrimmed.length < 8) {
+      setErro("Senha deve ter pelo menos 8 caracteres.");
       return;
     }
 
@@ -151,7 +151,7 @@ export default function AdicionarUsuarioModal({
               type={mostrarSenha ? "text" : "password"}
               value={senha}
               onChange={(event) => setSenha(event.target.value)}
-              placeholder="Mínimo 6 caracteres"
+              placeholder="Mínimo 8 caracteres"
               className="w-full rounded-md border border-gray-300 px-3 py-2 pr-10 text-sm text-gray-900 shadow-sm focus:border-[#ffc800] focus:outline-none focus:ring-2 focus:ring-[#ffc800]"
             />
             <button

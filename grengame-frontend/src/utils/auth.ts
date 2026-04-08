@@ -57,7 +57,7 @@ export function hasValidToken(): boolean {
     }
 
     return true;
-  } catch (error) {
+  } catch {
     clearTokens();
     return false;
   }
@@ -72,7 +72,7 @@ export function getAccessTokenExpiryMs(): number | null {
   try {
     const payload = decodeJwtPayload(accessToken);
     return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -87,7 +87,7 @@ export function getUserRoles(): string[] {
   try {
     const payload = decodeJwtPayload(accessToken);
     return Array.isArray(payload.roles) ? (payload.roles as string[]) : [];
-  } catch (error) {
+  } catch {
     return [];
   }
 }
@@ -142,6 +142,18 @@ export function hasRole(role: string): boolean {
   return roles.includes(role);
 }
 
+export function isGlobalAdmin(): boolean {
+  return hasRole('admin');
+}
+
+export function isTemporaryAdmin(): boolean {
+  return hasRole('temporary_admin');
+}
+
+export function canAccessAdminConsole(): boolean {
+  return isGlobalAdmin() || isTemporaryAdmin();
+}
+
 export function getCurrentUserId(): number | null {
   const accessToken = localStorage.getItem('accessToken');
   if (!accessToken) {
@@ -151,13 +163,13 @@ export function getCurrentUserId(): number | null {
     const payload = decodeJwtPayload(accessToken);
     const idFromToken = payload.user_id ?? payload.userId ?? null;
     return typeof idFromToken === 'number' ? idFromToken : Number(idFromToken) || null;
-  } catch (error) {
+  } catch {
     return null;
   }
 }
 
 export function isAdmin(): boolean {
-  return hasRole('admin');
+  return canAccessAdminConsole();
 }
 
 export function clearTokens(): void {

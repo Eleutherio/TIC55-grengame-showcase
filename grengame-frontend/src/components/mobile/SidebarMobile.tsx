@@ -1,7 +1,11 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import logoutIcon from "../../assets/img/logout.svg";
-import { isAdmin as isAdminFromToken } from "../../utils/auth";
+import {
+  canAccessAdminConsole,
+  isGlobalAdmin,
+  isTemporaryAdmin,
+} from "../../utils/auth";
 import { API_URL } from "../../config/api";
 import TemporaryUserBadge from "../TemporaryUserBadge";
 
@@ -21,6 +25,7 @@ type NavItem = {
   label: string;
   to: string;
   exact?: boolean;
+  dividerAfter?: boolean;
 };
 
 type UserMe = {
@@ -32,13 +37,24 @@ type UserMe = {
   is_temporary_account?: boolean;
 };
 
-const adminNavItems: NavItem[] = [
+const globalAdminNavItems: NavItem[] = [
   { label: "Administrar Usuários", to: "/app/AdministrarUsuarios" },
   { label: "Administrar Games", to: "/app/AdministrarGames" },
   { label: "Administrar Missões", to: "/app/AdministrarMissoes" },
-  { label: "Configurar Badges", to: "/app/AdministrarBadges" },
+  { label: "Configurar Badges", to: "/app/AdministrarBadges", dividerAfter: true },
   { label: "Todos os Games", to: "/app/cursos" },
-  { label: "Dashboard", to: "/app/Dashboard" },
+  { label: "Dashboard", to: "/app/Dashboard", dividerAfter: true },
+  { label: "Ranking", to: "/app/ranking" },
+  { label: "Meu Perfil", to: "/app/perfil" },
+  { label: "Meu Progresso", to: "/app/progresso" },
+];
+
+const temporaryAdminNavItems: NavItem[] = [
+  { label: "Administrar Usuários", to: "/app/AdministrarUsuarios" },
+  { label: "Administrar Games", to: "/app/AdministrarGames" },
+  { label: "Administrar Missões", to: "/app/AdministrarMissoes" },
+  { label: "Configurar Badges", to: "/app/AdministrarBadges", dividerAfter: true },
+  { label: "Todos os Games", to: "/app/cursos", dividerAfter: true },
   { label: "Ranking", to: "/app/ranking" },
   { label: "Meu Perfil", to: "/app/perfil" },
   { label: "Meu Progresso", to: "/app/progresso" },
@@ -122,10 +138,17 @@ export default function SidebarMobile({ isOpen, onClose }: SidebarMobileProps) {
     new Map()
   );
 
-  const isAdmin = isAdminFromToken();
+  const hasAdminConsoleAccess = canAccessAdminConsole();
+  const isGlobalAdminUser = isGlobalAdmin();
+  const isTemporaryAdminUser = isTemporaryAdmin();
   const visibleItems = useMemo(
-    () => (isAdmin ? adminNavItems : userNavItems),
-    [isAdmin]
+    () =>
+      isGlobalAdminUser
+        ? globalAdminNavItems
+        : isTemporaryAdminUser
+          ? temporaryAdminNavItems
+          : userNavItems,
+    [isGlobalAdminUser, isTemporaryAdminUser]
   );
 
   const fetchCurrentUser = useCallback(async (): Promise<UserMe> => {
@@ -445,7 +468,7 @@ export default function SidebarMobile({ isOpen, onClose }: SidebarMobileProps) {
                     className="h-2 w-2 rounded-full bg-emerald-400"
                     aria-hidden="true"
                   />
-                  {isAdmin ? "Administrador" : "Colaborador"}
+                  {hasAdminConsoleAccess ? "Administrador" : "Colaborador"}
                 </p>
               )}
             </div>
@@ -529,14 +552,14 @@ export default function SidebarMobile({ isOpen, onClose }: SidebarMobileProps) {
             )}
           </form>
 
-          {isAdmin && (
+          {hasAdminConsoleAccess && (
             <div className="mt-6 text-sm font-semibold tracking-tight text-amarelo">
               Painel do Administrador
             </div>
           )}
 
           <nav className="mt-4 flex flex-col gap-1 pb-6 text-sm">
-            {visibleItems.map(({ label, to, exact }, index) => (
+            {visibleItems.map(({ label, to, exact, dividerAfter }) => (
               <div key={label + to}>
                 <NavLink
                   to={to}
@@ -548,7 +571,7 @@ export default function SidebarMobile({ isOpen, onClose }: SidebarMobileProps) {
                 >
                   <span className="line-clamp-1">{label}</span>
                 </NavLink>
-                {isAdmin && (index === 4 || index === 6) && (
+                {dividerAfter && (
                   <div className="my-2 h-px bg-white/10" aria-hidden="true" />
                 )}
               </div>
@@ -590,7 +613,3 @@ export default function SidebarMobile({ isOpen, onClose }: SidebarMobileProps) {
     </>
   );
 }
-
-
-
-

@@ -28,12 +28,14 @@ export default function AcessoTemporario() {
     setErro("");
     setSucesso("");
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     if (!nome.trim()) {
       setErro("Informe como gostaria de ser chamado(a). Atualize a página e tente novamente.");
       return;
     }
 
-    if (!EMAIL_REGEX.test(email.trim())) {
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
       setErro("Informe um e-mail válido. Atualize a página e tente novamente.");
       return;
     }
@@ -52,7 +54,7 @@ export default function AcessoTemporario() {
         },
         body: JSON.stringify({
           nome: nome.trim(),
-          email: email.trim().toLowerCase(),
+          email: normalizedEmail,
           aceite_temporario: aceiteTemporario,
           aceite_formal: aceiteFormal,
         }),
@@ -74,9 +76,11 @@ export default function AcessoTemporario() {
         return;
       }
 
-      setSucesso(
-        "Solicitação registrada. Verifique seu e-mail para receber login e senha temporários."
-      );
+      const backendMessage =
+        typeof data?.message === "string"
+          ? data.message
+          : "Solicitação registrada. Aguarde a aprovação. Se o acesso temporário for liberado para o seu e-mail, você receberá um código de ativação.";
+      setSucesso(backendMessage);
       setNome("");
       setEmail("");
       setAceiteTemporario(false);
@@ -123,10 +127,13 @@ export default function AcessoTemporario() {
 
           <div className={styles.noticeBlock}>
             <p>
-              Após preencher seus dados, você receberá um e-mail informando login e
-              senha para acessar seu perfil temporário na plataforma. Essas
-              credenciais estarão disponíveis durante o prazo de 24h; após esse
-              período, seu perfil e suas informações serão excluídos.
+              Após preencher seus dados, sua solicitação será processada conforme a
+              configuração de segurança do ambiente. O acesso temporário agora
+              depende de aprovação explícita. Quando a solicitação for aprovada,
+              você receberá por e-mail um código de ativação para definir a
+              senha inicial do perfil temporário. O perfil, quando liberado,
+              permanece disponível por até 24h e pode ser removido após esse
+              período.
             </p>
           </div>
 

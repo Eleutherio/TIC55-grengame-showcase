@@ -1,5 +1,9 @@
 ﻿import { Navigate, createBrowserRouter } from "react-router-dom";
-import { withAdminGuard, withPrivateGuard } from "../lib/guards";
+import {
+  withAdminGuard,
+  withGlobalAdminGuard,
+  withPrivateGuard,
+} from "../lib/guards";
 import { lazyWithRetry } from "../lib/lazyWithRetry";
 import { withSuspense } from "../lib/withSuspense";
 
@@ -51,7 +55,7 @@ export const routerMobile = createBrowserRouter([
 
       {
         path: "Dashboard",
-        element: withSuspense(withAdminGuard(<Dashboard />)),
+        element: withSuspense(withGlobalAdminGuard(<Dashboard />)),
         handle: { breadcrumb: "Dashboard" },
       },
       {

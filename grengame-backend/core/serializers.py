@@ -71,9 +71,13 @@ class LoginSerializer(serializers.Serializer):
             and getattr(authenticated_user, "last_login", None) is None
             and first_login_window_minutes > 0
         ):
-            created_at = getattr(authenticated_user, "created_at", None)
-            if created_at is not None:
-                first_login_deadline = created_at + timedelta(
+            activation_reference = getattr(
+                authenticated_user,
+                "temporary_activated_at",
+                None,
+            ) or getattr(authenticated_user, "created_at", None)
+            if activation_reference is not None:
+                first_login_deadline = activation_reference + timedelta(
                     minutes=first_login_window_minutes
                 )
                 if timezone.now() > first_login_deadline:

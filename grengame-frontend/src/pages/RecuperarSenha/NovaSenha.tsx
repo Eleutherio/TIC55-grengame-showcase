@@ -5,13 +5,21 @@ import { API_CONFIG_ERROR, API_URL } from "../../config/api";
 import { fetchWithTimeout } from "../../utils/fetchWithTimeout";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+const PASSWORD_RESET_FLOW = "password-reset";
+const TEMPORARY_ACCESS_FLOW = "temporary-access";
 
 export default function NovaSenha() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const queryEmail = new URLSearchParams(location.search).get("email") || "";
+  const query = new URLSearchParams(location.search);
+  const queryEmail = query.get("email") || "";
   const stateEmail = typeof location.state?.email === "string" ? location.state.email : "";
+  const requestedFlow = query.get("flow") || location.state?.flow || PASSWORD_RESET_FLOW;
+  const flow =
+    requestedFlow === TEMPORARY_ACCESS_FLOW ? TEMPORARY_ACCESS_FLOW : PASSWORD_RESET_FLOW;
+  const isTemporaryAccessFlow = flow === TEMPORARY_ACCESS_FLOW;
+
   const [email, setEmail] = useState((stateEmail || queryEmail).trim().toLowerCase());
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [newPassword, setNewPassword] = useState("");
@@ -29,6 +37,18 @@ export default function NovaSenha() {
       setEmail((stateEmail || queryEmail).trim().toLowerCase());
     }
   }, [email, queryEmail, stateEmail]);
+
+  const description = isTemporaryAccessFlow
+    ? "Informe o e-mail usado na solicitação, o código de 6 dígitos recebido após a aprovação e defina a senha inicial do acesso temporário."
+    : "Informe o e-mail cadastrado, o código de 6 dígitos recebido e crie uma nova senha.";
+  const backTarget = isTemporaryAccessFlow ? "/acesso-temporario" : "/recuperar-senha";
+  const backLabel = isTemporaryAccessFlow ? "← Voltar à solicitação" : "← Voltar";
+  const verifyEndpoint = isTemporaryAccessFlow
+    ? `${API_URL}/auth/temporary-access/verify/`
+    : `${API_URL}/auth/password-reset/verify/`;
+  const confirmEndpoint = isTemporaryAccessFlow
+    ? `${API_URL}/auth/temporary-access/confirm/`
+    : `${API_URL}/auth/password-reset/confirm/`;
 
   const handleOtpChange = (index: number, value: string) => {
     if (!/^\d*$/.test(value)) return;
@@ -101,14 +121,14 @@ export default function NovaSenha() {
       }
 
       const verifyResponse = await fetchWithTimeout(
-        `${API_URL}/auth/password-reset/verify/`,
+        verifyEndpoint,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ email: normalizedEmail, code }),
         },
-        15000,
+        15000
       );
 
       const verifyData = await verifyResponse.json();
@@ -118,7 +138,7 @@ export default function NovaSenha() {
       }
 
       const confirmResponse = await fetchWithTimeout(
-        `${API_URL}/auth/password-reset/confirm/`,
+        confirmEndpoint,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -129,16 +149,20 @@ export default function NovaSenha() {
             confirm_password: confirmPassword,
           }),
         },
-        15000,
+        15000
       );
 
       const confirmData = await confirmResponse.json();
       if (!confirmResponse.ok) {
-        setError(confirmData.error || "Erro ao redefinir senha.");
+        setError(confirmData.error || "Erro ao concluir a operação.");
         return;
       }
 
-      setSuccess("Senha alterada com sucesso!");
+      setSuccess(
+        isTemporaryAccessFlow
+          ? "Acesso temporário ativado com sucesso!"
+          : "Senha alterada com sucesso!"
+      );
       setTimeout(() => navigate("/login"), 2000);
     } catch (requestError) {
       if (requestError instanceof DOMException && requestError.name === "AbortError") {
@@ -152,6 +176,11 @@ export default function NovaSenha() {
   };
 
   const handleResend = async () => {
+    if (isTemporaryAccessFlow) {
+      navigate("/acesso-temporario");
+      return;
+    }
+
     const normalizedEmail = validateEmail();
     if (!normalizedEmail) return;
 
@@ -170,7 +199,7 @@ export default function NovaSenha() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: normalizedEmail }),
         },
-        15000,
+        15000
       );
 
       if (response.ok) {
@@ -192,12 +221,10 @@ export default function NovaSenha() {
           <span className="gLetter2">G</span>ame
         </h1>
 
-        <p className="description">
-          Informe o e-mail cadastrado, o código de 6 dígitos recebido e crie uma nova senha.
-        </p>
+        <p className="description">{description}</p>
 
         <label className="inputLabel" htmlFor="reset-email">
-          E-mail cadastrado
+          {isTemporaryAccessFlow ? "E-mail informado na solicitação" : "E-mail cadastrado"}
         </label>
         <input
           id="reset-email"
@@ -227,14 +254,28 @@ export default function NovaSenha() {
             />
           ))}
         </div>
+
         <div className="resendContainer">
-          Não recebeu o código?{" "}
-          <button className="resendLink" onClick={handleResend} disabled={loading}>
-            Reenviar
-          </button>
+          {isTemporaryAccessFlow ? (
+            <>
+              Não recebeu o código?{" "}
+              <button className="resendLink" onClick={handleResend} disabled={loading}>
+                Solicitar novo acesso
+              </button>
+            </>
+          ) : (
+            <>
+              Não recebeu o código?{" "}
+              <button className="resendLink" onClick={handleResend} disabled={loading}>
+                Reenviar
+              </button>
+            </>
+          )}
         </div>
 
-        <label className="inputLabel">Nova Senha</label>
+        <label className="inputLabel">
+          {isTemporaryAccessFlow ? "Defina sua senha" : "Nova Senha"}
+        </label>
         <div className="passwordInputWrapper">
           <input
             type={showNewPassword ? "text" : "password"}
@@ -260,7 +301,9 @@ export default function NovaSenha() {
         </div>
         <span className="helperText">Mínimo de 8 caracteres</span>
 
-        <label className="inputLabel">Confirmar Nova Senha</label>
+        <label className="inputLabel">
+          {isTemporaryAccessFlow ? "Confirmar senha" : "Confirmar Nova Senha"}
+        </label>
         <div className="passwordInputWrapper">
           <input
             type={showConfirmPassword ? "text" : "password"}
@@ -289,11 +332,15 @@ export default function NovaSenha() {
         {success && <p className="successMessage">{success}</p>}
 
         <button className="btnReset" onClick={handleSubmit} disabled={loading}>
-          {loading ? "Aguarde..." : "Redefinir Senha"}
+          {loading
+            ? "Aguarde..."
+            : isTemporaryAccessFlow
+              ? "Ativar acesso temporário"
+              : "Redefinir Senha"}
         </button>
 
-        <Link to="/recuperar-senha" className="backLink">
-          &larr; Voltar
+        <Link to={backTarget} className="backLink">
+          {backLabel}
         </Link>
       </div>
     </div>

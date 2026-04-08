@@ -1,11 +1,13 @@
 import secrets
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 from django.utils import timezone
 
 from .models import BadgeConfig, Game, Mission
+from .verification_codes import generate_numeric_code
 
 User = get_user_model()
 
@@ -15,6 +17,22 @@ TEMP_GAMES_LIMIT = 1
 TEMP_MISSIONS_LIMIT = 10
 TEMP_BADGE_CRITERIA_LIMIT = 3
 TEMP_PASSWORD_SPECIAL_CHARS = "@#$%&*!?"
+TEMP_ACCESS_ACTIVATION_CODE_LENGTH = 6
+
+
+def is_global_admin(user) -> bool:
+    return bool(
+        user
+        and getattr(user, "is_authenticated", False)
+        and (
+            getattr(user, "is_superuser", False)
+            or getattr(user, "is_staff", False)
+            or (
+                getattr(user, "role", None) == "admin"
+                and not getattr(user, "is_temporary_account", False)
+            )
+        )
+    )
 
 
 def is_temporary_admin(user) -> bool:
@@ -24,6 +42,10 @@ def is_temporary_admin(user) -> bool:
         and getattr(user, "role", None) == "admin"
         and getattr(user, "is_temporary_account", False)
     )
+
+
+def can_access_admin_console(user) -> bool:
+    return is_global_admin(user) or is_temporary_admin(user)
 
 
 def visible_games_queryset_for(user, base_queryset=None):
@@ -64,6 +86,17 @@ def build_temporary_expiration():
     return timezone.now() + timedelta(hours=TEMP_ACCESS_LIFETIME_HOURS)
 
 
+def build_temporary_activation_code_expiration():
+    try:
+        code_minutes = int(
+            getattr(settings, "TEMPORARY_ACCESS_ACTIVATION_CODE_MINUTES", 15)
+        )
+    except (TypeError, ValueError):
+        code_minutes = 15
+
+    return timezone.now() + timedelta(minutes=max(code_minutes, 1))
+
+
 def generate_unique_username_from_email(email: str) -> str:
     local_part = email.split("@", 1)[0]
     candidate = local_part
@@ -99,6 +132,12 @@ def generate_temporary_password(length: int = 14) -> str:
     # Embaralha para evitar padrao previsivel.
     secrets.SystemRandom().shuffle(password_chars)
     return "".join(password_chars)
+
+
+def generate_temporary_activation_code(
+    length: int = TEMP_ACCESS_ACTIVATION_CODE_LENGTH,
+) -> str:
+    return generate_numeric_code(length)
 
 
 def purge_expired_temporary_accounts() -> int:

@@ -11,8 +11,10 @@ from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .password_policy import get_password_validation_errors
 from .temporary_access import (
     TEMP_MANAGED_USERS_LIMIT,
+    can_access_admin_console,
     generate_unique_username_from_email,
     is_temporary_admin,
 )
@@ -28,15 +30,7 @@ class IsAdminRole(BasePermission):
         if not user or not user.is_authenticated:
             return False
 
-        if getattr(user, "is_superuser", False) or getattr(user, "is_staff", False):
-            return True
-
-        # A permissao deve depender do usuario carregado pelo backend,
-        # sem fallback em payload de token para evitar inconsistencias.
-        if getattr(user, "role", None) == "admin":
-            return True
-
-        return False
+        return can_access_admin_console(user)
 
 
 def _normalize_email_ascii(email: str) -> str:
@@ -251,8 +245,8 @@ class CriarUsuarioView(APIView):
         except ValidationError:
             return Response({"error": "E-mail invalido."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not senha or len(senha) < 6:
-            return Response({"error": "Senha deve ter pelo menos 6 caracteres."}, status=status.HTTP_400_BAD_REQUEST)
+        if not senha:
+            return Response({"error": "Senha e obrigatoria."}, status=status.HTTP_400_BAD_REQUEST)
 
         if role not in ("admin", "user"):
             return Response({"error": "Role invalida."}, status=status.HTTP_400_BAD_REQUEST)
@@ -283,6 +277,9 @@ class CriarUsuarioView(APIView):
             role=role,
             created_by_temporary_admin=request.user if is_temp_admin else None,
         )
+        password_errors = get_password_validation_errors(senha, user=user)
+        if password_errors:
+            return Response({"error": password_errors[0]}, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(senha)
         user.save()
 
@@ -350,9 +347,11 @@ class AtualizarUsuarioView(APIView):
             user.role = requested_role
 
         if isinstance(senha, str) and senha.strip():
-            if len(senha.strip()) < 6:
-                return Response({"error": "Senha deve ter pelo menos 6 caracteres."}, status=status.HTTP_400_BAD_REQUEST)
-            user.set_password(senha.strip())
+            normalized_password = senha.strip()
+            password_errors = get_password_validation_errors(normalized_password, user=user)
+            if password_errors:
+                return Response({"error": password_errors[0]}, status=status.HTTP_400_BAD_REQUEST)
+            user.set_password(normalized_password)
 
         user.save()
 

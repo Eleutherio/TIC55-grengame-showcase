@@ -2,6 +2,14 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
 
+from .verification_codes import (
+    build_unusable_verification_code,
+    generate_session_token,
+    hash_verification_code,
+    hash_session_token,
+    verification_code_matches,
+)
+
 
 def calculate_stars(points_earned, points_value):
     if points_earned >= points_value:
@@ -39,6 +47,11 @@ class User(AbstractUser):
     )
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="user", verbose_name="Papel no sistema")
     is_temporary_account = models.BooleanField(default=False, verbose_name="Conta temporaria")
+    temporary_activated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Ativada em",
+    )
     temporary_expires_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -550,11 +563,171 @@ class UserBadgeUnlock(models.Model):
 
 class PasswordResetToken(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    token = models.CharField(max_length=6)
-    reset_session_token = models.CharField(max_length=36, blank=True, null=True)
+    token = models.CharField(max_length=128)
+    reset_session_token = models.CharField(max_length=64, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     is_used = models.BooleanField(default=False)
+    failed_attempts = models.PositiveSmallIntegerField(default=0)
 
     class Meta:
         db_table = "core_passwordresettoken"
+
+    def set_code(self, raw_code: str) -> None:
+        self.token = hash_verification_code(raw_code)
+        self.failed_attempts = 0
+
+    def matches_code(self, raw_code: str) -> bool:
+        return verification_code_matches(raw_code, self.token)
+
+    def invalidate_code(self) -> None:
+        self.token = build_unusable_verification_code()
+
+    def issue_session_token(self) -> str:
+        raw_token = generate_session_token()
+        self.reset_session_token = hash_session_token(raw_token)
+        return raw_token
+
+    def clear_session_token(self) -> None:
+        self.reset_session_token = None
+
+    def register_failed_attempt(self, max_attempts: int) -> bool:
+        self.failed_attempts += 1
+        update_fields = ["failed_attempts"]
+        if self.failed_attempts >= max(max_attempts, 1):
+            self.is_used = True
+            self.clear_session_token()
+            self.invalidate_code()
+            update_fields.extend(["is_used", "reset_session_token", "token"])
+        self.save(update_fields=update_fields)
+        return self.is_used
+
+    def consume_code(self) -> None:
+        self.is_used = True
+        self.invalidate_code()
+
+
+class TemporaryAccessRequest(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pendente"),
+        (STATUS_APPROVED, "Aprovada"),
+        (STATUS_REJECTED, "Rejeitada"),
+    ]
+
+    name = models.CharField(max_length=150, verbose_name="Nome informado")
+    email = models.EmailField(verbose_name="E-mail informado")
+    accepted_temporary_terms = models.BooleanField(
+        default=False,
+        verbose_name="Aceite dos termos temporarios",
+    )
+    accepted_formal_terms = models.BooleanField(
+        default=False,
+        verbose_name="Aceite do aviso formal",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        verbose_name="Status da solicitacao",
+    )
+    request_ip = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        verbose_name="IP da solicitacao",
+    )
+    request_user_agent = models.CharField(
+        max_length=512,
+        blank=True,
+        verbose_name="User-Agent da solicitacao",
+    )
+    reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_temporary_access_requests",
+        verbose_name="Revisada por",
+    )
+    provisioned_user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="temporary_access_requests",
+        verbose_name="Usuario provisionado",
+    )
+    requested_at = models.DateTimeField(auto_now_add=True, verbose_name="Solicitada em")
+    reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Revisada em",
+    )
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizada em")
+
+    class Meta:
+        db_table = "core_temporaryaccessrequest"
+        ordering = ["-requested_at"]
+        indexes = [
+            models.Index(fields=["email", "status"], name="idx_tar_email_status"),
+            models.Index(fields=["status", "requested_at"], name="idx_tar_status_req"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["email"],
+                condition=models.Q(status="pending"),
+                name="uniq_temp_access_pending_email",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.email} - {self.status}"
+
+
+class TemporaryAccessActivationToken(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    token = models.CharField(max_length=128)
+    activation_session_token = models.CharField(max_length=64, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+    failed_attempts = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        db_table = "core_temporaryaccessactivationtoken"
+
+    def set_code(self, raw_code: str) -> None:
+        self.token = hash_verification_code(raw_code)
+        self.failed_attempts = 0
+
+    def matches_code(self, raw_code: str) -> bool:
+        return verification_code_matches(raw_code, self.token)
+
+    def invalidate_code(self) -> None:
+        self.token = build_unusable_verification_code()
+
+    def issue_session_token(self) -> str:
+        raw_token = generate_session_token()
+        self.activation_session_token = hash_session_token(raw_token)
+        return raw_token
+
+    def clear_session_token(self) -> None:
+        self.activation_session_token = None
+
+    def register_failed_attempt(self, max_attempts: int) -> bool:
+        self.failed_attempts += 1
+        update_fields = ["failed_attempts"]
+        if self.failed_attempts >= max(max_attempts, 1):
+            self.is_used = True
+            self.clear_session_token()
+            self.invalidate_code()
+            update_fields.extend(["is_used", "activation_session_token", "token"])
+        self.save(update_fields=update_fields)
+        return self.is_used
+
+    def consume_code(self) -> None:
+        self.is_used = True
+        self.invalidate_code()

@@ -103,6 +103,15 @@ def _build_password_reset_link(to_email):
     return f"{frontend_url}{separator}email={quote(to_email)}"
 
 
+def _build_temporary_access_activation_link(to_email):
+    frontend_url = getattr(settings, "TEMP_ACCESS_ACTIVATION_FRONTEND_URL", "").strip()
+    if not frontend_url:
+        return ""
+
+    separator = "&" if "?" in frontend_url else "?"
+    return f"{frontend_url}{separator}email={quote(to_email)}"
+
+
 def send_password_reset_email(to_email, name, code):
     return _send_brevo_template_email(
         to_email=to_email,
@@ -117,22 +126,23 @@ def send_password_reset_email(to_email, name, code):
     )
 
 
-def send_temporary_access_email(to_email, name, password, expires_at):
-    login_url = getattr(
-        settings,
-        "TEMP_ACCESS_LOGIN_URL",
-        "https://tic55-grengame-showcase.pages.dev/login",
-    ).strip()
-
+def send_temporary_access_activation_email(
+    to_email,
+    name,
+    code,
+    activation_expires_at,
+    account_expires_at="",
+):
     return _send_brevo_template_email(
         to_email=to_email,
-        subject="Acesso temporario ao GrenGame",
-        template_env_name="BREVO_TEMP_ACCESS_TEMPLATE_ID",
+        subject="Ative seu acesso temporario ao GrenGame",
+        template_env_name="BREVO_TEMP_ACCESS_ACTIVATION_TEMPLATE_ID",
         data={
             "name": name,
             "email": to_email,
-            "password": password,
-            "expires_at": expires_at,
-            "login_url": login_url,
+            "code": code,
+            "activation_expires_at": activation_expires_at,
+            "account_expires_at": account_expires_at,
+            "activation_link": _build_temporary_access_activation_link(to_email),
         },
     )

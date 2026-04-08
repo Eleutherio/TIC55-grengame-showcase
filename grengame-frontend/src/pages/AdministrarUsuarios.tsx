@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import SearchField from "../components/SearchField";
-import { getCurrentUserId } from "../utils/auth";
+import { getCurrentUserId, isGlobalAdmin } from "../utils/auth";
 import ImportarCSVModal from "./Usuarios/ImportarCSVModal";
 import type { CSVRow } from "./Usuarios/parseCsv";
 import ResumoImportacaoModal from "./Usuarios/ResumoImportacaoModal";
@@ -22,6 +22,18 @@ type Usuario = {
   cursosCompletos: number;
   role?: "admin" | "user";
   can_manage?: boolean;
+};
+
+type SolicitacaoAcessoTemporario = {
+  id: number;
+  nome: string;
+  email: string;
+  status: "pending" | "approved" | "rejected";
+  requested_at: string;
+  requested_at_display: string;
+  reviewed_at?: string | null;
+  reviewed_at_display?: string | null;
+  reviewed_by?: string | null;
 };
 
 const API_BASE_URL = API_URL.replace(/\/+$/, "");
@@ -121,6 +133,49 @@ async function buscarUsuarios(): Promise<Usuario[]> {
   return data as Usuario[];
 }
 
+async function buscarSolicitacoesPendentes(): Promise<SolicitacaoAcessoTemporario[]> {
+  const response = await fetch(`${API_BASE_URL}/auth/temporary-access/requests/`, {
+    method: "GET",
+    headers: getAuthHeaders(),
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Falha ao buscar solicitações pendentes (${response.status})`);
+  }
+
+  const data: unknown = await response.json();
+  if (!Array.isArray(data)) {
+    throw new Error("Resposta inesperada ao buscar solicitações pendentes");
+  }
+
+  return data as SolicitacaoAcessoTemporario[];
+}
+
+async function decidirSolicitacaoTemporaria(
+  requestId: number,
+  action: "approve" | "reject"
+) {
+  const response = await fetch(
+    `${API_BASE_URL}/auth/temporary-access/requests/${requestId}/${action}/`,
+    {
+      method: "POST",
+      headers: getAuthHeaders({
+        "Content-Type": "application/json",
+      }),
+      credentials: "include",
+    }
+  );
+
+  if (!response.ok) {
+    const errorPayload = await response.json().catch(() => ({}));
+    const message =
+      getApiErrorMessage(errorPayload) ||
+      `Falha ao ${action === "approve" ? "aprovar" : "rejeitar"} solicitação (${response.status})`;
+    throw new Error(message);
+  }
+}
+
 async function removerColaborador(email: string) {
   const response = await fetch(`${API_BASE_URL}/auth/usuarios/remover/`, {
     method: "POST",
@@ -185,6 +240,7 @@ async function atualizarUsuario(usuario: DadosEdicaoUsuario) {
 }
 
 export default function AdministrarUsuarios() {
+  const globalAdmin = isGlobalAdmin();
   const currentUserId = getCurrentUserId();
   const [visibleCount, setVisibleCount] = useState(6);
   const [hasExpanded, setHasExpanded] = useState(false);
@@ -201,6 +257,11 @@ export default function AdministrarUsuarios() {
   const [isRemoveConfirmOpen, setIsRemoveConfirmOpen] = useState(false);
   const [removeConfirmChecked, setRemoveConfirmChecked] = useState(false);
   const [feedbackMensagem, setFeedbackMensagem] = useState<string | null>(null);
+  const [solicitacoesPendentes, setSolicitacoesPendentes] = useState<
+    SolicitacaoAcessoTemporario[]
+  >([]);
+  const [isLoadingSolicitacoes, setIsLoadingSolicitacoes] = useState(false);
+  const [requestActionId, setRequestActionId] = useState<number | null>(null);
   const [resultadoImportacao, setResultadoImportacao] = useState<{
     importados: number;
     descartados: ErroImportacao[];
@@ -282,9 +343,34 @@ export default function AdministrarUsuarios() {
     setUsuarios([]);
   }, []);
 
+  const carregarSolicitacoesPendentes = useCallback(async () => {
+    if (!globalAdmin) {
+      setSolicitacoesPendentes([]);
+      return;
+    }
+
+    setIsLoadingSolicitacoes(true);
+    try {
+      const pendentes = await buscarSolicitacoesPendentes();
+      setSolicitacoesPendentes(pendentes);
+    } catch (error) {
+      console.warn(
+        "Falha ao buscar solicitações pendentes de acesso temporário.",
+        error
+      );
+      setSolicitacoesPendentes([]);
+    } finally {
+      setIsLoadingSolicitacoes(false);
+    }
+  }, [globalAdmin]);
+
   useEffect(() => {
     void carregarUsuarios();
   }, [carregarUsuarios]);
+
+  useEffect(() => {
+    void carregarSolicitacoesPendentes();
+  }, [carregarSolicitacoesPendentes]);
 
   useEffect(() => {
     if (!isRemoveConfirmOpen) {
@@ -559,6 +645,34 @@ export default function AdministrarUsuarios() {
     }
   };
 
+  const handleDecidirSolicitacaoTemporaria = async (
+    solicitacao: SolicitacaoAcessoTemporario,
+    action: "approve" | "reject"
+  ) => {
+    if (requestActionId !== null) {
+      return;
+    }
+
+    setRequestActionId(solicitacao.id);
+    try {
+      await decidirSolicitacaoTemporaria(solicitacao.id, action);
+      await Promise.all([carregarSolicitacoesPendentes(), carregarUsuarios()]);
+      setFeedbackMensagem(
+        action === "approve"
+          ? `Solicitação de ${solicitacao.nome} aprovada com sucesso.`
+          : `Solicitação de ${solicitacao.nome} rejeitada com sucesso.`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Não foi possível concluir a decisão da solicitação.";
+      window.alert(message);
+    } finally {
+      setRequestActionId(null);
+    }
+  };
+
   return (
     <>
       <main className=" px-3 py-8 text-gray-900 sm:px-4 md:px-6">
@@ -627,6 +741,98 @@ export default function AdministrarUsuarios() {
                 </div>
               </div>
             </div>
+
+            {globalAdmin && (
+              <div className="rounded-2xl border border-white/30 bg-white/95 p-4 shadow-lg shadow-black/10">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-[#2f2574]">
+                      Solicitações pendentes de acesso temporário
+                    </h2>
+                    <p className="text-sm text-gray-600">
+                      Contas temporárias só são provisionadas após aprovação explícita.
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center self-start rounded-full bg-roxo-forte/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-roxo-forte">
+                    {solicitacoesPendentes.length} pendente
+                    {solicitacoesPendentes.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+
+                <div className="mt-4">
+                  {isLoadingSolicitacoes ? (
+                    <p className="rounded-xl border border-[#4b40cb]/15 bg-white px-4 py-3 text-sm text-gray-600">
+                      Carregando solicitações pendentes...
+                    </p>
+                  ) : solicitacoesPendentes.length === 0 ? (
+                    <p className="rounded-xl border border-[#4b40cb]/15 bg-white px-4 py-3 text-sm text-gray-600">
+                      Nenhuma solicitação pendente no momento.
+                    </p>
+                  ) : (
+                    <div className="grid gap-3 xl:grid-cols-2">
+                      {solicitacoesPendentes.map((solicitacao) => {
+                        const isProcessing = requestActionId === solicitacao.id;
+                        return (
+                          <article
+                            key={solicitacao.id}
+                            className="rounded-xl border border-[#4b40cb]/15 bg-white p-4 shadow-sm"
+                          >
+                            <div className="flex flex-col gap-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-base font-semibold text-gray-900">
+                                    {solicitacao.nome}
+                                  </p>
+                                  <p className="text-sm break-words text-gray-600">
+                                    {solicitacao.email}
+                                  </p>
+                                </div>
+                                <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
+                                  Pendente
+                                </span>
+                              </div>
+
+                              <div className="rounded-lg bg-[#f5f4ff] px-3 py-2 text-sm text-[#2f2574]">
+                                Solicitado em {solicitacao.requested_at_display}
+                              </div>
+
+                              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleDecidirSolicitacaoTemporaria(
+                                      solicitacao,
+                                      "reject"
+                                    )
+                                  }
+                                  disabled={isProcessing}
+                                  className="cursor-pointer rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {isProcessing ? "Processando..." : "Rejeitar"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleDecidirSolicitacaoTemporaria(
+                                      solicitacao,
+                                      "approve"
+                                    )
+                                  }
+                                  disabled={isProcessing}
+                                  className="cursor-pointer rounded-md bg-amarelo px-4 py-2 text-sm font-semibold text-[#2f2574] transition hover:bg-[#e6b300] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f2574] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {isProcessing ? "Processando..." : "Aprovar e enviar ativação"}
+                                </button>
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="overflow-hidden rounded-lg border border-white/40 bg-white shadow">
               {/* Desktop / tablet table */}
@@ -1013,8 +1219,6 @@ export default function AdministrarUsuarios() {
     </>
   );
 }
-
-
 
 
 

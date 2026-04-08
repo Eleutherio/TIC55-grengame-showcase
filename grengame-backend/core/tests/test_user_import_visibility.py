@@ -107,3 +107,58 @@ def test_temporary_admin_cannot_update_unmanaged_user(api_client):
     assert response.status_code == status.HTTP_404_NOT_FOUND
     unmanaged_user.refresh_from_db()
     assert unmanaged_user.check_password("Senha123!")
+
+
+@pytest.mark.django_db
+def test_global_admin_cannot_create_user_with_weak_password(api_client):
+    admin_user = User.objects.create_user(
+        username="global_admin_create",
+        email="global.admin.create@test.local",
+        password="Senha123!Admin",
+        role="admin",
+    )
+
+    api_client.force_authenticate(user=admin_user)
+    response = api_client.post(
+        "/auth/usuarios/criar/",
+        {
+            "nome": "Novo Usuario",
+            "email": "novo.usuario@test.local",
+            "password": "12345678",
+            "role": "user",
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert User.objects.filter(email="novo.usuario@test.local").exists() is False
+
+
+@pytest.mark.django_db
+def test_global_admin_cannot_update_user_with_weak_password(api_client):
+    admin_user = User.objects.create_user(
+        username="global_admin_update",
+        email="global.admin.update@test.local",
+        password="Senha123!Admin",
+        role="admin",
+    )
+    managed_user = User.objects.create_user(
+        username="managed_user_update",
+        email="managed.user.update@test.local",
+        password="Senha123!Inicial",
+        role="user",
+    )
+
+    api_client.force_authenticate(user=admin_user)
+    response = api_client.post(
+        "/auth/usuarios/atualizar/",
+        {
+            "email": managed_user.email,
+            "password": "12345678",
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    managed_user.refresh_from_db()
+    assert managed_user.check_password("Senha123!Inicial")

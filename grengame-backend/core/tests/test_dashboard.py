@@ -101,7 +101,7 @@ class TestDashboardActiveUsersEndpoint:
         response = authenticated_temporary_admin_client.get(
             '/auth/dashboard/usuarios-ativos/'
         )
-        assert response.status_code == status.HTTP_200_OK
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 @pytest.mark.django_db

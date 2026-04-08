@@ -1,6 +1,7 @@
 import logging
 from math import ceil
 from uuid import uuid4
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import update_last_login
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -40,6 +41,7 @@ from .badge_services import (
     resolve_badge_config_value_mode,
 )
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
+from .email_service import send_temporary_access_activation_email
 from .models import (
     BadgeConfig,
     BadgeTierRule,
@@ -48,23 +50,35 @@ from .models import (
     LeaderboardEntry,
     Mission,
     MissionCompletions,
+    PasswordResetToken,
+    TemporaryAccessActivationToken,
+    TemporaryAccessRequest,
     WordleHintUsage,
     UserBadgeUnlock,
 )
 from .tokens import CustomRefreshToken
+from .password_policy import get_password_validation_errors
 from .temporary_access import (
+    can_access_admin_console,
     TEMP_BADGE_CRITERIA_LIMIT,
     TEMP_GAMES_LIMIT,
     TEMP_MISSIONS_LIMIT,
+    build_temporary_activation_code_expiration,
     build_temporary_expiration,
     editable_games_queryset_for,
     editable_missions_queryset_for,
-    generate_temporary_password,
+    generate_temporary_activation_code,
     generate_unique_username_from_email,
+    is_global_admin,
     is_temporary_admin,
     purge_expired_temporary_accounts,
     visible_games_queryset_for,
     visible_missions_queryset_for,
+)
+from .verification_codes import (
+    build_unusable_verification_code,
+    generate_numeric_code,
+    hash_session_token,
 )
 from django.utils import timezone
 from django.db.models import Sum, Count, Min, Q
@@ -87,6 +101,112 @@ BADGE_CRITERION_LABELS = {
     "active_days": "Ritmo Constante",
 }
 WORDLE_HINT_COST_POINTS = 10
+
+
+def _get_request_client_ip(request):
+    forwarded_for = str(request.META.get("HTTP_X_FORWARDED_FOR", "")).strip()
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip() or None
+
+    remote_addr = str(request.META.get("REMOTE_ADDR", "")).strip()
+    return remote_addr or None
+
+
+def _serialize_temporary_access_request(access_request):
+    requested_at = access_request.requested_at
+    reviewed_at = access_request.reviewed_at
+    return {
+        "id": access_request.id,
+        "nome": access_request.name,
+        "email": access_request.email,
+        "status": access_request.status,
+        "requested_at": requested_at.isoformat(),
+        "requested_at_display": timezone.localtime(requested_at).strftime(
+            "%d/%m/%Y %H:%M"
+        ),
+        "reviewed_at": reviewed_at.isoformat() if reviewed_at else None,
+        "reviewed_at_display": (
+            timezone.localtime(reviewed_at).strftime("%d/%m/%Y %H:%M")
+            if reviewed_at
+            else None
+        ),
+        "reviewed_by": (
+            access_request.reviewed_by.get_full_name().strip()
+            or access_request.reviewed_by.email
+        )
+        if access_request.reviewed_by_id
+        else None,
+    }
+
+
+def _provision_temporary_access_user(nome, contato_email, *, existing_user=None):
+    account_expires_at = build_temporary_expiration()
+
+    temp_user = existing_user
+    if temp_user is None:
+        temporary_username = generate_unique_username_from_email(contato_email)
+        temp_user = User(
+            email=contato_email,
+            username=temporary_username,
+            role="admin",
+            is_temporary_account=True,
+        )
+
+    temp_user.first_name = nome
+    temp_user.role = "admin"
+    temp_user.is_temporary_account = True
+    temp_user.temporary_expires_at = account_expires_at
+    temp_user.temporary_activated_at = None
+    temp_user.set_unusable_password()
+    temp_user.save()
+    return temp_user
+
+
+def _issue_temporary_access_activation(nome, contato_email, *, temp_user):
+    activation_code = generate_temporary_activation_code()
+    activation_expires_at = build_temporary_activation_code_expiration()
+    account_expires_at = temp_user.temporary_expires_at or build_temporary_expiration()
+    activation_expires_at_display = timezone.localtime(
+        activation_expires_at
+    ).strftime("%d/%m/%Y %H:%M")
+    account_expires_at_display = timezone.localtime(account_expires_at).strftime(
+        "%d/%m/%Y %H:%M"
+    )
+
+    TemporaryAccessActivationToken.objects.filter(
+        user=temp_user,
+        is_used=False,
+    ).update(
+        is_used=True,
+        token=build_unusable_verification_code(),
+        activation_session_token=None,
+    )
+
+    activation_token = TemporaryAccessActivationToken(
+        user=temp_user,
+        expires_at=activation_expires_at,
+    )
+    activation_token.set_code(activation_code)
+    activation_token.save()
+
+    email_sent = send_temporary_access_activation_email(
+        to_email=contato_email,
+        name=nome,
+        code=activation_code,
+        activation_expires_at=activation_expires_at_display,
+        account_expires_at=account_expires_at_display,
+    )
+    if not email_sent:
+        raise DRFValidationError(
+            "Nao foi possivel enviar o e-mail no momento. Atualize a pagina e tente novamente."
+        )
+
+    return {
+        "activation_expires_at_display": activation_expires_at_display,
+        "account_expires_at_display": account_expires_at_display,
+        "activation_expires_at": activation_expires_at,
+        "account_expires_at": account_expires_at,
+    }
 
 
 def _resolve_uploaded_file_url(request, raw_value):
@@ -282,9 +402,10 @@ class UserUpdateView(APIView):
                     {"error": "Nova senha e confirmação não coincidem."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            if len(new_password) < 8:
+            password_errors = get_password_validation_errors(new_password, user=user)
+            if password_errors:
                 return Response(
-                    {"error": "A nova senha deve ter no mínimo 8 caracteres."},
+                    {"error": password_errors[0]},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             user.set_password(new_password)
@@ -360,9 +481,12 @@ class IsAdminOrReadOnly(BasePermission):
     def has_permission(self, request, view):
         if request.method in ("GET", "HEAD", "OPTIONS"):
             return True
-        if request.user.is_superuser:
-            return True
-        return request.user.is_authenticated and getattr(request.user, "role", None) == "admin"
+        return can_access_admin_console(request.user)
+
+
+class IsGlobalAdminPermission(BasePermission):
+    def has_permission(self, request, view):
+        return is_global_admin(request.user)
 
 
 class GameListCreateView(ListCreateAPIView):
@@ -1775,8 +1899,6 @@ class TemporaryAccessRequestView(APIView):
     throttle_scope = "temporary_access_request"
 
     def post(self, request):
-        from .email_service import send_temporary_access_email
-
         purge_expired_temporary_accounts()
 
         payload = request.data if isinstance(request.data, dict) else {}
@@ -1784,6 +1906,21 @@ class TemporaryAccessRequestView(APIView):
         contato_email = str(payload.get("email", "")).strip().lower()
         aceite_temporario = bool(payload.get("aceite_temporario", False))
         aceite_formal = bool(payload.get("aceite_formal", False))
+
+        if not getattr(settings, "TEMPORARY_ACCESS_SELF_SERVICE_ENABLED", False):
+            logger.warning(
+                "TEMP_ACCESS_REQUEST_DISABLED: contato_email=%s nome=%s",
+                contato_email,
+                nome,
+            )
+            return Response(
+                {
+                    "error": (
+                        "Solicitacao de acesso temporario indisponivel no momento."
+                    ),
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         if not nome:
             return Response(
@@ -1799,48 +1936,155 @@ class TemporaryAccessRequestView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        allowed_domains = tuple(
+            domain.lower()
+            for domain in getattr(
+                settings,
+                "TEMPORARY_ACCESS_ALLOWED_EMAIL_DOMAINS",
+                (),
+            )
+            if isinstance(domain, str) and domain.strip()
+        )
+        if allowed_domains:
+            email_domain = contato_email.rsplit("@", 1)[-1]
+            if email_domain not in allowed_domains:
+                logger.warning(
+                    "TEMP_ACCESS_REQUEST_REJECTED_DOMAIN: contato_email=%s domain=%s",
+                    contato_email,
+                    email_domain,
+                )
+                return Response(
+                    {
+                        "error": (
+                            "Solicitacao de acesso temporario indisponivel para este e-mail."
+                        ),
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
         if not aceite_temporario or not aceite_formal:
             return Response(
                 {"error": "Aceites obrigatorios nao confirmados. Atualize a pagina e tente novamente."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if User.objects.filter(email=contato_email).exists():
-            return Response(
-                {"error": "Ja existe um usuario com este e-mail."},
-                status=status.HTTP_409_CONFLICT,
-            )
-
         temporary_email = contato_email
-        temporary_username = generate_unique_username_from_email(temporary_email)
-        temporary_password = generate_temporary_password()
-        expires_at = build_temporary_expiration()
-        expires_at_display = timezone.localtime(expires_at).strftime("%d/%m/%Y %H:%M")
+        user_existente = User.objects.filter(email=temporary_email).first()
+        approved_request = (
+            TemporaryAccessRequest.objects.select_related("provisioned_user")
+            .filter(
+                email=temporary_email,
+                status=TemporaryAccessRequest.STATUS_APPROVED,
+            )
+            .order_by("-reviewed_at", "-requested_at")
+            .first()
+        )
+
+        if user_existente is not None:
+            is_pending_temporary_account = (
+                getattr(user_existente, "is_temporary_account", False)
+                and not user_existente.has_usable_password()
+            )
+            can_resend_activation = (
+                is_pending_temporary_account
+                and approved_request is not None
+                and approved_request.provisioned_user_id == user_existente.id
+            )
+            if not can_resend_activation:
+                return Response(
+                    {"error": "Ja existe um usuario com este e-mail."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            try:
+                with transaction.atomic():
+                    temp_user = _provision_temporary_access_user(
+                        nome,
+                        temporary_email,
+                        existing_user=user_existente,
+                    )
+                    activation_context = _issue_temporary_access_activation(
+                        nome,
+                        contato_email,
+                        temp_user=temp_user,
+                    )
+            except DRFValidationError as exc:
+                detail = exc.detail
+                if isinstance(detail, list) and detail:
+                    message = str(detail[0])
+                else:
+                    message = str(detail)
+                return Response(
+                    {"error": message},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+            except Exception:
+                logger.exception(
+                    "TEMP_ACCESS_REQUEST_RESEND_FAILED: contato_email=%s nome=%s",
+                    contato_email,
+                    nome,
+                )
+                return Response(
+                    {
+                        "error": (
+                            "Falha ao processar solicitacao. Atualize a pagina e tente novamente."
+                        ),
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            logger.info(
+                (
+                    "TEMP_ACCESS_REQUEST_RESEND_SUCCESS: contato_email=%s temp_user=%s "
+                    "account_expires_at=%s activation_expires_at=%s"
+                ),
+                contato_email,
+                temporary_email,
+                activation_context["account_expires_at"].isoformat(),
+                activation_context["activation_expires_at"].isoformat(),
+            )
+            return Response(
+                {
+                    "message": (
+                        "Solicitacao processada com sucesso. Verifique seu e-mail "
+                        "para receber o codigo de ativacao."
+                    ),
+                    "temporary_access_activation_expires_at": (
+                        activation_context["activation_expires_at_display"]
+                    ),
+                    "temporary_access_account_expires_at": (
+                        activation_context["account_expires_at_display"]
+                    ),
+                },
+                status=status.HTTP_201_CREATED,
+            )
 
         try:
             with transaction.atomic():
-                temp_user = User(
-                    email=temporary_email,
-                    username=temporary_username,
-                    first_name=nome,
-                    role="admin",
-                    is_temporary_account=True,
-                    temporary_expires_at=expires_at,
-                )
-                temp_user.set_password(temporary_password)
-                temp_user.save()
-
-                email_sent = send_temporary_access_email(
-                    to_email=contato_email,
-                    name=nome,
-                    password=temporary_password,
-                    expires_at=expires_at_display,
-                )
-
-                if not email_sent:
-                    raise DRFValidationError(
-                        "Nao foi possivel enviar o e-mail no momento. Atualize a pagina e tente novamente."
+                pending_request = (
+                    TemporaryAccessRequest.objects.select_for_update()
+                    .filter(
+                        email=temporary_email,
+                        status=TemporaryAccessRequest.STATUS_PENDING,
                     )
+                    .first()
+                )
+                if pending_request is None:
+                    pending_request = TemporaryAccessRequest(
+                        email=temporary_email,
+                        status=TemporaryAccessRequest.STATUS_PENDING,
+                    )
+                pending_request.name = nome
+                pending_request.accepted_temporary_terms = aceite_temporario
+                pending_request.accepted_formal_terms = aceite_formal
+                pending_request.request_ip = _get_request_client_ip(request)
+                pending_request.request_user_agent = str(
+                    request.META.get("HTTP_USER_AGENT", "")
+                )[:512]
+                pending_request.reviewed_at = None
+                pending_request.reviewed_by = None
+                pending_request.provisioned_user = None
+                pending_request.save()
         except DRFValidationError as exc:
             detail = exc.detail
             if isinstance(detail, list) and detail:
@@ -1860,16 +2104,349 @@ class TemporaryAccessRequestView(APIView):
             )
 
         logger.info(
-            "TEMP_ACCESS_REQUEST_SUCCESS: contato_email=%s temp_user=%s expires_at=%s",
+            "TEMP_ACCESS_REQUEST_PENDING: contato_email=%s nome=%s",
             contato_email,
-            temporary_email,
-            expires_at.isoformat(),
+            nome,
         )
         return Response(
             {
-                "message": "Solicitacao processada com sucesso. Verifique seu e-mail para acessar a plataforma.",
+                "message": (
+                    "Solicitacao registrada com sucesso. Aguarde a aprovacao "
+                    "do acesso temporario. Se aprovada, voce recebera um "
+                    "codigo de ativacao por e-mail."
+                ),
+                "temporary_access_status": TemporaryAccessRequest.STATUS_PENDING,
             },
             status=status.HTTP_201_CREATED,
+        )
+
+
+class TemporaryAccessPendingListView(APIView):
+    permission_classes = [IsAuthenticated, IsGlobalAdminPermission]
+
+    def get(self, request):
+        pending_requests = TemporaryAccessRequest.objects.filter(
+            status=TemporaryAccessRequest.STATUS_PENDING
+        ).order_by("requested_at")
+        return Response(
+            [_serialize_temporary_access_request(item) for item in pending_requests],
+            status=status.HTTP_200_OK,
+        )
+
+
+class TemporaryAccessApproveView(APIView):
+    permission_classes = [IsAuthenticated, IsGlobalAdminPermission]
+
+    def post(self, request, request_id):
+        purge_expired_temporary_accounts()
+
+        try:
+            with transaction.atomic():
+                access_request = TemporaryAccessRequest.objects.select_for_update().get(
+                    id=request_id
+                )
+                if access_request.status != TemporaryAccessRequest.STATUS_PENDING:
+                    return Response(
+                        {
+                            "error": (
+                                "Somente solicitacoes pendentes podem ser aprovadas."
+                            ),
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                existing_user = (
+                    User.objects.select_for_update()
+                    .filter(email=access_request.email)
+                    .first()
+                )
+                if existing_user is not None:
+                    is_pending_temporary_account = (
+                        getattr(existing_user, "is_temporary_account", False)
+                        and not existing_user.has_usable_password()
+                    )
+                    if not is_pending_temporary_account:
+                        return Response(
+                            {"error": "Ja existe um usuario com este e-mail."},
+                            status=status.HTTP_409_CONFLICT,
+                        )
+
+                temp_user = _provision_temporary_access_user(
+                    access_request.name,
+                    access_request.email,
+                    existing_user=existing_user,
+                )
+                activation_context = _issue_temporary_access_activation(
+                    access_request.name,
+                    access_request.email,
+                    temp_user=temp_user,
+                )
+
+                access_request.status = TemporaryAccessRequest.STATUS_APPROVED
+                access_request.reviewed_at = timezone.now()
+                access_request.reviewed_by = request.user
+                access_request.provisioned_user = temp_user
+                access_request.save(
+                    update_fields=[
+                        "status",
+                        "reviewed_at",
+                        "reviewed_by",
+                        "provisioned_user",
+                        "updated_at",
+                    ]
+                )
+        except TemporaryAccessRequest.DoesNotExist:
+            return Response(
+                {"error": "Solicitacao nao encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except DRFValidationError as exc:
+            detail = exc.detail
+            if isinstance(detail, list) and detail:
+                message = str(detail[0])
+            else:
+                message = str(detail)
+            return Response({"error": message}, status=status.HTTP_502_BAD_GATEWAY)
+        except Exception:
+            logger.exception("TEMP_ACCESS_APPROVAL_FAILED: request_id=%s", request_id)
+            return Response(
+                {"error": "Falha ao aprovar solicitacao temporaria."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        logger.info(
+            (
+                "TEMP_ACCESS_APPROVAL_SUCCESS: request_id=%s email=%s approver=%s "
+                "account_expires_at=%s activation_expires_at=%s"
+            ),
+            access_request.id,
+            access_request.email,
+            request.user.id,
+            activation_context["account_expires_at"].isoformat(),
+            activation_context["activation_expires_at"].isoformat(),
+        )
+        return Response(
+            {
+                "message": "Solicitacao aprovada com sucesso.",
+                "request": _serialize_temporary_access_request(access_request),
+                "temporary_access_activation_expires_at": (
+                    activation_context["activation_expires_at_display"]
+                ),
+                "temporary_access_account_expires_at": (
+                    activation_context["account_expires_at_display"]
+                ),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class TemporaryAccessRejectView(APIView):
+    permission_classes = [IsAuthenticated, IsGlobalAdminPermission]
+
+    def post(self, request, request_id):
+        try:
+            with transaction.atomic():
+                access_request = TemporaryAccessRequest.objects.select_for_update().get(
+                    id=request_id
+                )
+                if access_request.status != TemporaryAccessRequest.STATUS_PENDING:
+                    return Response(
+                        {
+                            "error": (
+                                "Somente solicitacoes pendentes podem ser rejeitadas."
+                            ),
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                access_request.status = TemporaryAccessRequest.STATUS_REJECTED
+                access_request.reviewed_at = timezone.now()
+                access_request.reviewed_by = request.user
+                access_request.save(
+                    update_fields=[
+                        "status",
+                        "reviewed_at",
+                        "reviewed_by",
+                        "updated_at",
+                    ]
+                )
+        except TemporaryAccessRequest.DoesNotExist:
+            return Response(
+                {"error": "Solicitacao nao encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception:
+            logger.exception("TEMP_ACCESS_REJECTION_FAILED: request_id=%s", request_id)
+            return Response(
+                {"error": "Falha ao rejeitar solicitacao temporaria."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        logger.info(
+            "TEMP_ACCESS_REJECTION_SUCCESS: request_id=%s email=%s reviewer=%s",
+            access_request.id,
+            access_request.email,
+            request.user.id,
+        )
+        return Response(
+            {
+                "message": "Solicitacao rejeitada com sucesso.",
+                "request": _serialize_temporary_access_request(access_request),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class TemporaryAccessVerifyView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "temporary_access_verify"
+
+    def post(self, request):
+        email = request.data.get("email")
+        code = request.data.get("code")
+
+        if not email or not code:
+            return Response(
+                {"error": "Email e codigo sao obrigatorios."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        normalized_email = str(email).strip().lower()
+        try:
+            user = User.objects.get(email=normalized_email)
+        except User.DoesNotExist:
+            if TemporaryAccessRequest.objects.filter(
+                email=normalized_email,
+                status=TemporaryAccessRequest.STATUS_PENDING,
+            ).exists():
+                return Response(
+                    {"error": "Codigo invalido ou solicitacao ainda nao aprovada."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            return Response(
+                {"error": "Usuario nao encontrado."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not getattr(user, "is_temporary_account", False):
+            return Response(
+                {"error": "Codigo invalido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        token_obj = (
+            TemporaryAccessActivationToken.objects.filter(
+                user=user,
+                is_used=False,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if token_obj is None:
+            return Response(
+                {"error": "Codigo invalido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if timezone.now() > token_obj.expires_at:
+            token_obj.is_used = True
+            token_obj.invalidate_code()
+            token_obj.save(update_fields=["is_used", "token"])
+            return Response(
+                {"error": "Codigo expirado."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not token_obj.matches_code(code):
+            token_obj.register_failed_attempt(
+                getattr(settings, "TEMPORARY_ACCESS_ACTIVATION_MAX_ATTEMPTS", 5)
+            )
+            return Response(
+                {"error": "Codigo invalido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        token_obj.consume_code()
+        session_token = token_obj.issue_session_token()
+        token_obj.save(
+            update_fields=["is_used", "token", "activation_session_token"]
+        )
+
+        logger.info("TEMP_ACCESS_VERIFY: user=%s email=%s", user.id, user.email)
+
+        return Response(
+            {"session_token": session_token},
+            status=status.HTTP_200_OK,
+        )
+
+
+class TemporaryAccessConfirmView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "temporary_access_confirm"
+
+    def post(self, request):
+        from datetime import timedelta
+
+        session_token = request.data.get("session_token")
+        new_password = request.data.get("new_password")
+        confirm_password = request.data.get("confirm_password")
+
+        if not session_token or not new_password or not confirm_password:
+            return Response(
+                {"error": "Todos os campos sao obrigatorios."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if new_password != confirm_password:
+            return Response(
+                {"error": "As senhas nao coincidem."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        session_token_digest = hash_session_token(session_token)
+        try:
+            token_obj = TemporaryAccessActivationToken.objects.get(
+                activation_session_token=session_token_digest,
+                is_used=True,
+            )
+        except TemporaryAccessActivationToken.DoesNotExist:
+            return Response(
+                {"error": "Sessao invalida ou expirada."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if timezone.now() > token_obj.expires_at + timedelta(minutes=15):
+            return Response(
+                {"error": "Sessao expirada."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = token_obj.user
+        password_errors = get_password_validation_errors(new_password, user=user)
+        if password_errors:
+            return Response(
+                {"error": password_errors[0]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.set_password(new_password)
+        user.temporary_activated_at = timezone.now()
+        user.save(update_fields=["password", "temporary_activated_at"])
+
+        token_obj.clear_session_token()
+        token_obj.save(update_fields=["activation_session_token"])
+
+        logger.info(
+            "TEMP_ACCESS_CONFIRM: user=%s email=%s",
+            user.id,
+            user.email,
+        )
+
+        return Response(
+            {"message": "Acesso temporario ativado com sucesso."},
+            status=status.HTTP_200_OK,
         )
 
 
@@ -1879,9 +2456,7 @@ class PasswordResetRequestView(APIView):
     throttle_scope = "password_reset_request"
 
     def post(self, request):
-        from .models import PasswordResetToken
         from .email_service import send_password_reset_email
-        import secrets
         from datetime import timedelta
 
         email = request.data.get('email')
@@ -1894,12 +2469,17 @@ class PasswordResetRequestView(APIView):
             logger.warning(f"PASSWORD_RESET_ATTEMPT_FAILED: email={email} reason=user_not_found")
             return Response({'message': 'Se o email estiver cadastrado, você receberá um código.'}, status=status.HTTP_200_OK)
 
-        PasswordResetToken.objects.filter(user=user, is_used=False).update(is_used=True)
+        PasswordResetToken.objects.filter(user=user, is_used=False).update(
+            is_used=True,
+            token=build_unusable_verification_code(),
+            reset_session_token=None,
+        )
 
-        token = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+        token = generate_numeric_code()
         expires_at = timezone.now() + timedelta(minutes=15)
-
-        PasswordResetToken.objects.create(user=user, token=token, expires_at=expires_at)
+        reset_token = PasswordResetToken(user=user, expires_at=expires_at)
+        reset_token.set_code(token)
+        reset_token.save()
 
         name = user.first_name or user.email.split('@')[0]
         email_sent = send_password_reset_email(email, name, token)
@@ -1917,9 +2497,6 @@ class PasswordResetVerifyView(APIView):
     throttle_scope = "password_reset_verify"
 
     def post(self, request):
-        from .models import PasswordResetToken
-        import uuid
-
         email = request.data.get('email')
         code = request.data.get('code')
 
@@ -1931,21 +2508,30 @@ class PasswordResetVerifyView(APIView):
         except User.DoesNotExist:
             return Response({'error': 'Usuário não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
 
-        try:
-            token_obj = PasswordResetToken.objects.get(user=user, token=code, is_used=False)
-        except PasswordResetToken.DoesNotExist:
+        token_obj = (
+            PasswordResetToken.objects.filter(user=user, is_used=False)
+            .order_by("-created_at")
+            .first()
+        )
+        if token_obj is None:
             return Response({'error': 'Código inválido.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if timezone.now() > token_obj.expires_at:
             return Response({'error': 'Código expirado.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        token_obj.is_used = True
-        token_obj.reset_session_token = str(uuid.uuid4())
-        token_obj.save()
+        if not token_obj.matches_code(code):
+            token_obj.register_failed_attempt(
+                getattr(settings, "PASSWORD_RESET_CODE_MAX_ATTEMPTS", 5)
+            )
+            return Response({'error': 'CÃ³digo invÃ¡lido.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        token_obj.consume_code()
+        session_token = token_obj.issue_session_token()
+        token_obj.save(update_fields=["is_used", "token", "reset_session_token"])
 
         logger.info(f"PASSWORD_RESET_VERIFY: user={user.id} email={email}")
 
-        return Response({'session_token': token_obj.reset_session_token}, status=status.HTTP_200_OK)
+        return Response({'session_token': session_token}, status=status.HTTP_200_OK)
 
 
 class PasswordResetConfirmView(APIView):
@@ -1967,12 +2553,10 @@ class PasswordResetConfirmView(APIView):
         if new_password != confirm_password:
             return Response({'error': 'As senhas não coincidem.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if len(new_password) < 8:
-            return Response({'error': 'A senha deve ter no mínimo 8 caracteres.'}, status=status.HTTP_400_BAD_REQUEST)
-
+        session_token_digest = hash_session_token(session_token)
         try:
             token_obj = PasswordResetToken.objects.get(
-                reset_session_token=session_token,
+                reset_session_token=session_token_digest,
                 is_used=True
             )
         except PasswordResetToken.DoesNotExist:
@@ -1982,10 +2566,13 @@ class PasswordResetConfirmView(APIView):
             return Response({'error': 'Sessão expirada.'}, status=status.HTTP_400_BAD_REQUEST)
 
         user = token_obj.user
+        password_errors = get_password_validation_errors(new_password, user=user)
+        if password_errors:
+            return Response({'error': password_errors[0]}, status=status.HTTP_400_BAD_REQUEST)
         user.set_password(new_password)
         user.save()
 
-        token_obj.reset_session_token = None
+        token_obj.clear_session_token()
         token_obj.save()
 
         logger.info(f"PASSWORD_RESET_CONFIRM: user={user.id} email={user.email}")
@@ -1995,9 +2582,7 @@ class PasswordResetConfirmView(APIView):
 
 class IsAdminRole(BasePermission):
     def has_permission(self, request, view):
-        if request.user.is_superuser:
-            return True
-        return request.user.is_authenticated and getattr(request.user, "role", None) == "admin"
+        return is_global_admin(request.user)
 
 
 class DashboardActiveUsersView(APIView):
@@ -2175,5 +2760,3 @@ class DashboardTopCollaboratorsView(APIView):
         return Response({
             'ranking': ranking,
         }, status=status.HTTP_200_OK)
-
-

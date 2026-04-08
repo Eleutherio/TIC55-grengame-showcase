@@ -54,9 +54,47 @@ try:
 except ValueError:
     TEMPORARY_FIRST_LOGIN_WINDOW_MINUTES = 30
 
+try:
+    TEMPORARY_ACCESS_ACTIVATION_CODE_MINUTES = int(
+        os.getenv("TEMPORARY_ACCESS_ACTIVATION_CODE_MINUTES", "15")
+    )
+except ValueError:
+    TEMPORARY_ACCESS_ACTIVATION_CODE_MINUTES = 15
+
+try:
+    TEMPORARY_ACCESS_ACTIVATION_MAX_ATTEMPTS = int(
+        os.getenv("TEMPORARY_ACCESS_ACTIVATION_MAX_ATTEMPTS", "5")
+    )
+except ValueError:
+    TEMPORARY_ACCESS_ACTIVATION_MAX_ATTEMPTS = 5
+
+try:
+    PASSWORD_RESET_CODE_MAX_ATTEMPTS = int(
+        os.getenv("PASSWORD_RESET_CODE_MAX_ATTEMPTS", "5")
+    )
+except ValueError:
+    PASSWORD_RESET_CODE_MAX_ATTEMPTS = 5
+
+TEMPORARY_ACCESS_SELF_SERVICE_ENABLED = os.getenv(
+    "TEMPORARY_ACCESS_SELF_SERVICE_ENABLED",
+    "False",
+).strip().lower() in ("1", "true", "yes", "on")
+TEMPORARY_ACCESS_ALLOWED_EMAIL_DOMAINS = tuple(
+    domain.strip().lower()
+    for domain in os.getenv(
+        "TEMPORARY_ACCESS_ALLOWED_EMAIL_DOMAINS",
+        "",
+    ).split(",")
+    if domain.strip()
+)
+
 TEMP_ACCESS_LOGIN_URL = os.getenv(
     "TEMP_ACCESS_LOGIN_URL",
     "https://tic55-grengame-showcase.pages.dev/login",
+).strip()
+TEMP_ACCESS_ACTIVATION_FRONTEND_URL = os.getenv(
+    "TEMP_ACCESS_ACTIVATION_FRONTEND_URL",
+    "https://tic55-grengame-showcase.pages.dev/nova-senha?flow=temporary-access",
 ).strip()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
@@ -196,6 +234,8 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'login': os.getenv('THROTTLE_LOGIN_RATE', '10/min'),
         'temporary_access_request': os.getenv('THROTTLE_TEMP_ACCESS_RATE', '3/hour'),
+        'temporary_access_verify': os.getenv('THROTTLE_TEMP_ACCESS_VERIFY_RATE', '10/hour'),
+        'temporary_access_confirm': os.getenv('THROTTLE_TEMP_ACCESS_CONFIRM_RATE', '10/hour'),
         'password_reset_request': os.getenv('THROTTLE_PASSWORD_RESET_REQUEST_RATE', '5/hour'),
         'password_reset_verify': os.getenv('THROTTLE_PASSWORD_RESET_VERIFY_RATE', '10/hour'),
         'password_reset_confirm': os.getenv('THROTTLE_PASSWORD_RESET_CONFIRM_RATE', '10/hour'),
@@ -302,4 +342,3 @@ else:
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
