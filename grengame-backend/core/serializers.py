@@ -8,6 +8,11 @@ from django.db import models
 from django.utils import timezone
 from .badge_services import is_percentage_based_criterion
 from .temporary_access import purge_expired_temporary_accounts
+from .upload_security import (
+    FileUploadSecurityError,
+    validate_image_upload,
+    validate_video_upload,
+)
 from .models import (
     BadgeConfig,
     BadgeTierRule,
@@ -150,17 +155,30 @@ class GameSerializer(serializers.ModelSerializer):
 
     def validate_image_url(self, arquivo):
         if arquivo:
-            if arquivo.size > 5 * 1024 * 1024:
-                raise serializers.ValidationError("Imagem deve ter no máximo 5MB.")
+            try:
+                validate_image_upload(
+                    arquivo,
+                    max_size=5 * 1024 * 1024,
+                    size_error_message="Imagem deve ter no m?ximo 5MB.",
+                    invalid_format_message="Formato de imagem inv?lido. Use JPG, PNG ou WEBP.",
+                    invalid_content_message="Arquivo de imagem inv?lido ou corrompido.",
+                )
+            except FileUploadSecurityError as exc:
+                raise serializers.ValidationError(str(exc))
         return arquivo
 
     def validate_video_url(self, arquivo):
         if arquivo:
-            extensoes = ('.mp4', '.webm', '.mov', '.avi')
-            if not arquivo.name.lower().endswith(extensoes):
-                raise serializers.ValidationError("Formato de vídeo inválido. Use: mp4, webm, mov ou avi.")
-            if arquivo.size > 1 * 1024 * 1024 * 1024:
-                raise serializers.ValidationError("Vídeo deve ter no máximo 1GB.")
+            try:
+                validate_video_upload(
+                    arquivo,
+                    max_size=1 * 1024 * 1024 * 1024,
+                    size_error_message="V?deo deve ter no m?ximo 1GB.",
+                    invalid_format_message="Formato de v?deo inv?lido. Use: mp4, webm, mov ou avi.",
+                    invalid_content_message="Arquivo de v?deo inv?lido ou corrompido.",
+                )
+            except FileUploadSecurityError as exc:
+                raise serializers.ValidationError(str(exc))
         return arquivo
 
     def validate_description(self, value):
@@ -178,8 +196,16 @@ class GameSerializer(serializers.ModelSerializer):
 
     def validate_banner(self, arquivo):
         if arquivo:
-            if arquivo.size > 5 * 1024 * 1024:
-                raise serializers.ValidationError("Banner deve ter no máximo 5MB.")
+            try:
+                validate_image_upload(
+                    arquivo,
+                    max_size=5 * 1024 * 1024,
+                    size_error_message="Banner deve ter no m?ximo 5MB.",
+                    invalid_format_message="Formato de imagem inv?lido. Use JPG, PNG ou WEBP.",
+                    invalid_content_message="Arquivo de imagem inv?lido ou corrompido.",
+                )
+            except FileUploadSecurityError as exc:
+                raise serializers.ValidationError(str(exc))
         return arquivo
 
     def get_course_points(self, obj):

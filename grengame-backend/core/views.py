@@ -80,6 +80,7 @@ from .verification_codes import (
     generate_numeric_code,
     hash_session_token,
 )
+from .upload_security import FileUploadSecurityError, validate_image_upload
 from django.utils import timezone
 from django.db.models import Sum, Count, Min, Q
 from django.db.models.functions import Coalesce
@@ -89,12 +90,6 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 MAX_AVATAR_SIZE = 2 * 1024 * 1024
-ALLOWED_AVATAR_TYPES = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-}
-
 BADGE_CRITERION_LABELS = {
     "course_points": "Conquistador do Curso",
     "perfect_missions": "Perfeccionista",
@@ -416,17 +411,17 @@ class UserUpdateView(APIView):
             user.last_name = serializer.validated_data['last_name']
         avatar_file = serializer.validated_data.get('avatar')
         if avatar_file:
-            if avatar_file.size > MAX_AVATAR_SIZE:
-                return Response(
-                    {'error': 'Arquivo muito grande. Tamanho maximo: 2MB.'},
-                    status=status.HTTP_400_BAD_REQUEST
+            try:
+                ext = validate_image_upload(
+                    avatar_file,
+                    max_size=MAX_AVATAR_SIZE,
+                    size_error_message='Arquivo muito grande. Tamanho maximo: 2MB.',
+                    invalid_format_message='Formato invalido. Use JPG, PNG ou WEBP.',
+                    invalid_content_message='Arquivo de imagem invalido ou corrompido.',
                 )
-
-            content_type = getattr(avatar_file, 'content_type', '') or ''
-            ext = ALLOWED_AVATAR_TYPES.get(content_type.lower())
-            if not ext:
+            except FileUploadSecurityError as exc:
                 return Response(
-                    {'error': 'Formato invalido. Use JPG, PNG ou WEBP.'},
+                    {'error': str(exc)},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 

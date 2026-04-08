@@ -1,8 +1,10 @@
 import pytest
+from io import BytesIO
 from django.urls import reverse
 from django.core.files.uploadedfile import SimpleUploadedFile
+from PIL import Image
 from rest_framework.test import APIClient
-from core.models import User, Game
+from core.models import User
 
 
 @pytest.fixture
@@ -22,18 +24,27 @@ def api_client():
 
 @pytest.fixture
 def imagem_valida():
-    # PNG 1x1 transparente válido.
-    png_1x1 = (
-        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
-        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\x0dIDAT\x08\xd7c\xf8"
-        b"\xff\xff?\x00\x05\xfe\x02\xfeA\xa7\x1d\x8d\x00\x00\x00\x00IEND\xaeB`\x82"
-    )
-    return SimpleUploadedFile("imagem.png", png_1x1, content_type="image/png")
+    buffer = BytesIO()
+    Image.new("RGBA", (1, 1), (255, 0, 0, 255)).save(buffer, format="PNG")
+    return SimpleUploadedFile("imagem.png", buffer.getvalue(), content_type="image/png")
 
 
 @pytest.fixture
 def video_valido():
-    return SimpleUploadedFile('video.mp4', b'conteudo', content_type='video/mp4')
+    mp4_header = (
+        b"\x00\x00\x00\x18ftypmp42"
+        b"\x00\x00\x00\x00mp42isom"
+    )
+    return SimpleUploadedFile('video.mp4', mp4_header, content_type='video/mp4')
+
+
+@pytest.fixture
+def avatar_invalido_com_mime_de_imagem():
+    return SimpleUploadedFile(
+        'avatar.png',
+        b'<html>nao-e-imagem</html>',
+        content_type='image/png',
+    )
 
 
 @pytest.mark.django_db
@@ -52,7 +63,11 @@ def test_admin_upload_valid_media(api_client, admin_user, imagem_valida, video_v
 def test_admin_upload_invalid_image(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     url = reverse('core:course-list-create')
-    arquivo_invalido = SimpleUploadedFile('arquivo.txt', b'conteudo', content_type='text/plain')
+    arquivo_invalido = SimpleUploadedFile(
+        'arquivo.png',
+        b'<script>alert(1)</script>',
+        content_type='image/png',
+    )
     data = {
         'name': 'Curso Invalido',
         'image_url': arquivo_invalido
@@ -65,7 +80,11 @@ def test_admin_upload_invalid_image(api_client, admin_user):
 def test_admin_upload_invalid_video_format(api_client, admin_user):
     api_client.force_authenticate(user=admin_user)
     url = reverse('core:course-list-create')
-    video_invalido = SimpleUploadedFile('video.txt', b'conteudo', content_type='text/plain')
+    video_invalido = SimpleUploadedFile(
+        'video.mp4',
+        b'<html>nao-e-video</html>',
+        content_type='video/mp4',
+    )
     data = {
         'name': 'Curso Video Invalido',
         'video_url': video_invalido
@@ -84,3 +103,37 @@ def test_player_cannot_upload_media(api_client, player_user, imagem_valida):
     }
     response = api_client.post(url, data, format='multipart')
     assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_user_update_rejects_avatar_with_spoofed_image_metadata(
+    api_client,
+    player_user,
+    avatar_invalido_com_mime_de_imagem,
+):
+    api_client.force_authenticate(user=player_user)
+    url = reverse('core:user_update')
+
+    response = api_client.put(
+        url,
+        {'avatar': avatar_invalido_com_mime_de_imagem},
+        format='multipart',
+    )
+
+    assert response.status_code == 400
+    assert response.data['error'] == 'Arquivo de imagem invalido ou corrompido.'
+
+
+@pytest.mark.django_db
+def test_user_update_accepts_valid_avatar_upload(api_client, player_user, imagem_valida):
+    api_client.force_authenticate(user=player_user)
+    url = reverse('core:user_update')
+
+    response = api_client.put(
+        url,
+        {'avatar': imagem_valida},
+        format='multipart',
+    )
+
+    assert response.status_code == 200
+    assert response.data['avatar_url']
