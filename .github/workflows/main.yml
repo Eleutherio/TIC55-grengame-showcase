@@ -16,4 +16,5 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           curl --fail -X GET \
-            "$SUPABASE_URL/rest/v1/?apikey=$SUPABASE_ANON_KEY"
+            "$SUPABASE_URL/auth/v1/settings" \
+            -H "apikey: $SUPABASE_ANON_KEY"
