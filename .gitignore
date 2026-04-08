@@ -49,14 +49,7 @@ eggs/
 .eggs/
 lib/
 !grengame-frontend/src/lib/
-grengame-frontend/src/lib/*
-!grengame-frontend/src/lib/guards.tsx
-!grengame-frontend/src/lib/PrivateGuard.tsx
-!grengame-frontend/src/lib/AdminGuard.tsx
-!grengame-frontend/src/lib/GlobalAdminGuard.tsx
-!grengame-frontend/src/lib/withSuspense.tsx
-!grengame-frontend/src/lib/utils.ts
-!grengame-frontend/src/lib/lazyWithRetry.ts
+!grengame-frontend/src/lib/**
 lib64/
 parts/
 sdist/
