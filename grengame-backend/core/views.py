@@ -179,6 +179,96 @@ def _get_mission_elapsed_seconds(mission_completion, reference_time=None):
     return max(elapsed, 0)
 
 
+def _get_mission_heartbeat_min_interval_seconds():
+    raw_value = getattr(
+        settings,
+        "MISSION_CONSUMPTION_HEARTBEAT_MIN_INTERVAL_SECONDS",
+        5,
+    )
+    try:
+        return max(int(raw_value), 1)
+    except (TypeError, ValueError):
+        return 5
+
+
+def _get_mission_heartbeat_max_credit_seconds():
+    raw_value = getattr(
+        settings,
+        "MISSION_CONSUMPTION_HEARTBEAT_MAX_CREDIT_SECONDS",
+        15,
+    )
+    try:
+        return max(int(raw_value), 1)
+    except (TypeError, ValueError):
+        return 15
+
+
+def _get_mission_heartbeat_freshness_seconds():
+    raw_value = getattr(
+        settings,
+        "MISSION_CONSUMPTION_HEARTBEAT_FRESHNESS_SECONDS",
+        30,
+    )
+    try:
+        return max(int(raw_value), 1)
+    except (TypeError, ValueError):
+        return 30
+
+
+def _get_mission_consumption_progress_seconds(mission_completion):
+    return max(int(mission_completion.consumption_progress_seconds or 0), 0)
+
+
+def _get_mission_consumption_remaining_seconds(mission_completion):
+    required_seconds = _get_mission_required_consumption_seconds(
+        mission_completion.mission
+    )
+    progress_seconds = _get_mission_consumption_progress_seconds(mission_completion)
+    return max(required_seconds - progress_seconds, 0)
+
+
+def _has_recent_mission_consumption_heartbeat(
+    mission_completion,
+    *,
+    reference_time=None,
+):
+    last_heartbeat_at = mission_completion.last_consumption_heartbeat_at
+    if last_heartbeat_at is None:
+        return False
+
+    effective_reference = reference_time or timezone.now()
+    freshness_seconds = _get_mission_heartbeat_freshness_seconds()
+    elapsed_since_heartbeat = int(
+        (effective_reference - last_heartbeat_at).total_seconds()
+    )
+    return max(elapsed_since_heartbeat, 0) <= freshness_seconds
+
+
+def _build_mission_consumption_response(mission_completion, *, credited_seconds=0):
+    required_seconds = _get_mission_required_consumption_seconds(
+        mission_completion.mission
+    )
+    progress_seconds = _get_mission_consumption_progress_seconds(mission_completion)
+    remaining_seconds = max(required_seconds - progress_seconds, 0)
+    return {
+        "required_seconds": required_seconds,
+        "progress_seconds": progress_seconds,
+        "remaining_seconds": remaining_seconds,
+        "credited_seconds": max(int(credited_seconds or 0), 0),
+        "heartbeat_count": int(mission_completion.consumption_heartbeat_count or 0),
+        "last_heartbeat_at": (
+            mission_completion.last_consumption_heartbeat_at.isoformat()
+            if mission_completion.last_consumption_heartbeat_at
+            else None
+        ),
+        "consumption_marked_complete_at": (
+            mission_completion.consumption_marked_complete_at.isoformat()
+            if mission_completion.consumption_marked_complete_at
+            else None
+        ),
+    }
+
+
 def _build_wordle_letter_states(attempt_word, target_word):
     normalized_attempt = str(attempt_word or "").upper()
     normalized_target = str(target_word or "").upper()
@@ -1101,6 +1191,90 @@ class MissionCompletionsStartView(APIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
+class MissionConsumptionHeartbeatView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, mission_id):
+        user = request.user
+
+        try:
+            mission = visible_missions_queryset_for(
+                user,
+                Mission.objects.filter(is_active=True),
+            ).get(pk=mission_id)
+        except Mission.DoesNotExist:
+            return Response(
+                {"error": "Missão não encontrada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not _mission_requires_consumption_validation(mission):
+            return Response(
+                {"error": "Esta missão não utiliza heartbeat de consumo."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            mission_completion = MissionCompletions.objects.select_related("mission").get(
+                user=user,
+                mission=mission,
+            )
+        except MissionCompletions.DoesNotExist:
+            return Response(
+                {"error": "Você precisa iniciar esta missão primeiro."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if mission_completion.status == "completed":
+            return Response(
+                {"error": "Você já completou esta missão."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        heartbeat_now = timezone.now()
+        mark_complete = request.data.get("mark_complete") is True
+        heartbeat_result = mission_completion.register_consumption_heartbeat(
+            reference_time=heartbeat_now,
+            min_interval_seconds=_get_mission_heartbeat_min_interval_seconds(),
+            max_credit_seconds=_get_mission_heartbeat_max_credit_seconds(),
+        )
+
+        update_fields = []
+        if heartbeat_result["accepted"]:
+            update_fields.extend(
+                ["last_consumption_heartbeat_at", "consumption_heartbeat_count"]
+            )
+            if heartbeat_result["credited_seconds"] > 0:
+                update_fields.append("consumption_progress_seconds")
+
+        if mark_complete and mission_completion.consumption_marked_complete_at is None:
+            mission_completion.consumption_marked_complete_at = heartbeat_now
+            update_fields.append("consumption_marked_complete_at")
+
+        if update_fields:
+            mission_completion.save(update_fields=list(dict.fromkeys(update_fields)))
+
+        response_data = {
+            "success": True,
+            "throttled": not heartbeat_result["accepted"],
+            "wait_seconds": heartbeat_result["wait_seconds"],
+            **_build_mission_consumption_response(
+                mission_completion,
+                credited_seconds=heartbeat_result["credited_seconds"],
+            ),
+        }
+        response_data["ready_to_validate"] = (
+            response_data["remaining_seconds"] == 0
+            and mission_completion.consumption_marked_complete_at is not None
+            and _has_recent_mission_consumption_heartbeat(
+                mission_completion,
+                reference_time=heartbeat_now,
+            )
+        )
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
 class MissionCompletionsCompleteView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -1144,16 +1318,13 @@ class MissionCompletionsCompleteView(APIView):
             _mission_requires_consumption_validation(mission_completion.mission)
             and mission_completion.consumption_validated_at is None
         ):
-            required_seconds = _get_mission_required_consumption_seconds(
-                mission_completion.mission
-            )
-            elapsed_seconds = _get_mission_elapsed_seconds(mission_completion)
             return Response(
                 {
                     'error': 'Consumo da missão ainda não validado no servidor.',
-                    'required_seconds': required_seconds,
-                    'elapsed_seconds': elapsed_seconds,
-                    'remaining_seconds': max(required_seconds - elapsed_seconds, 0),
+                    **_build_mission_consumption_response(mission_completion),
+                    'recent_heartbeat': _has_recent_mission_consumption_heartbeat(
+                        mission_completion
+                    ),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -1220,33 +1391,45 @@ class MissionValidateView(APIView):
 
         if _mission_requires_consumption_validation(mission):
             validation_now = timezone.now()
-            required_seconds = _get_mission_required_consumption_seconds(mission)
-            elapsed_seconds = _get_mission_elapsed_seconds(
-                mission_completion,
-                reference_time=validation_now,
-            )
+            progress_payload = _build_mission_consumption_response(mission_completion)
 
-            if mission.mission_type == 'reading':
-                if request.data.get('scroll_completed') is not True:
-                    return Response(
-                        {'error': 'A leitura precisa ser percorrida até o final antes da validação.'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-            elif mission.mission_type == 'video':
-                if request.data.get('playback_completed') is not True:
-                    return Response(
-                        {'error': 'O vídeo precisa sinalizar reprodução concluída antes da validação.'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
-            if elapsed_seconds < required_seconds:
+            if mission_completion.consumption_marked_complete_at is None:
+                error_message = (
+                    'A leitura precisa ser percorrida até o final antes da validação.'
+                    if mission.mission_type == 'reading'
+                    else 'O vídeo precisa chegar ao final antes da validação.'
+                )
                 return Response(
                     {
-                        'error': 'Tempo mínimo de consumo ainda não atingido.',
-                        'required_seconds': required_seconds,
-                        'elapsed_seconds': elapsed_seconds,
-                        'remaining_seconds': required_seconds - elapsed_seconds,
+                        'error': error_message,
+                        **progress_payload,
+                        'recent_heartbeat': _has_recent_mission_consumption_heartbeat(
+                            mission_completion,
+                            reference_time=validation_now,
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if progress_payload['remaining_seconds'] > 0:
+                return Response(
+                    {
+                        'error': 'Tempo mínimo de consumo validado pelo servidor ainda não atingido.',
+                        **progress_payload,
                         'status': mission_completion.status,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if not _has_recent_mission_consumption_heartbeat(
+                mission_completion,
+                reference_time=validation_now,
+            ):
+                return Response(
+                    {
+                        'error': 'Consumo ficou ocioso ou sem heartbeat recente. Continue na missão antes de validar.',
+                        **progress_payload,
+                        'recent_heartbeat': False,
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
@@ -1260,8 +1443,7 @@ class MissionValidateView(APIView):
                     'success': True,
                     'status': mission_completion.status,
                     'ready_to_complete': True,
-                    'required_seconds': required_seconds,
-                    'elapsed_seconds': elapsed_seconds,
+                    **_build_mission_consumption_response(mission_completion),
                     'message': 'Consumo validado com sucesso. Agora conclua a missão.',
                 },
                 status=status.HTTP_200_OK,

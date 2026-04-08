@@ -12,6 +12,26 @@ from core.models import Game, Mission, MissionCompletions
 User = get_user_model()
 
 
+def set_consumption_progress(
+    user,
+    mission,
+    *,
+    progress_seconds,
+    heartbeat_count=2,
+    mark_complete=True,
+    last_heartbeat_offset_seconds=0,
+):
+    heartbeat_reference = timezone.now() - timedelta(
+        seconds=last_heartbeat_offset_seconds
+    )
+    MissionCompletions.objects.filter(user=user, mission=mission).update(
+        consumption_progress_seconds=progress_seconds,
+        consumption_heartbeat_count=heartbeat_count,
+        last_consumption_heartbeat_at=heartbeat_reference,
+        consumption_marked_complete_at=heartbeat_reference if mark_complete else None,
+    )
+
+
 @pytest.fixture
 def api_client():
     return APIClient()
@@ -355,13 +375,10 @@ def test_user_can_complete_mission(authenticated_client, create_mission):
     mission = create_mission(points_value=150, mission_type="video", order=1)
     client, user = authenticated_client()
     client.post(f"/auth/missoes/{mission.id}/iniciar/")
-    MissionCompletions.objects.filter(user=user, mission=mission).update(
-        started_at=timezone.now() - timedelta(minutes=2)
-    )
+    set_consumption_progress(user, mission, progress_seconds=60)
 
     validate_response = client.post(
         f"/auth/missoes/{mission.id}/validar/",
-        {"playback_completed": True},
         format="json",
     )
     assert validate_response.status_code == status.HTTP_200_OK
@@ -391,12 +408,9 @@ def test_cannot_complete_mission_twice(authenticated_client, create_mission):
     mission = create_mission(points_value=100, mission_type="video")
     client, user = authenticated_client()
     client.post(f"/auth/missoes/{mission.id}/iniciar/")
-    MissionCompletions.objects.filter(user=user, mission=mission).update(
-        started_at=timezone.now() - timedelta(minutes=2)
-    )
+    set_consumption_progress(user, mission, progress_seconds=60)
     client.post(
         f"/auth/missoes/{mission.id}/validar/",
-        {"playback_completed": True},
         format="json",
     )
 
@@ -413,12 +427,9 @@ def test_cannot_complete_inactive_mission(authenticated_client, create_mission):
     mission = create_mission(mission_type="video")
     client, user = authenticated_client()
     client.post(f"/auth/missoes/{mission.id}/iniciar/")
-    MissionCompletions.objects.filter(user=user, mission=mission).update(
-        started_at=timezone.now() - timedelta(minutes=2)
-    )
+    set_consumption_progress(user, mission, progress_seconds=60)
     client.post(
         f"/auth/missoes/{mission.id}/validar/",
-        {"playback_completed": True},
         format="json",
     )
 
@@ -436,9 +447,7 @@ def test_cannot_complete_video_without_server_validation(authenticated_client, c
     mission = create_mission(points_value=100, mission_type="video")
     client, user = authenticated_client()
     client.post(f"/auth/missoes/{mission.id}/iniciar/")
-    MissionCompletions.objects.filter(user=user, mission=mission).update(
-        started_at=timezone.now() - timedelta(minutes=2)
-    )
+    set_consumption_progress(user, mission, progress_seconds=60)
 
     response = client.patch(f"/auth/missoes/{mission.id}/completar/")
 
@@ -447,23 +456,73 @@ def test_cannot_complete_video_without_server_validation(authenticated_client, c
 
 
 @pytest.mark.django_db
-def test_validate_video_requires_minimum_elapsed_time(authenticated_client, create_mission):
+def test_validate_video_requires_accumulated_server_progress(authenticated_client, create_mission):
     mission = create_mission(points_value=100, mission_type="video")
     client, user = authenticated_client()
     client.post(f"/auth/missoes/{mission.id}/iniciar/")
-    MissionCompletions.objects.filter(user=user, mission=mission).update(
-        started_at=timezone.now() - timedelta(seconds=30)
-    )
+    set_consumption_progress(user, mission, progress_seconds=30)
 
     response = client.post(
         f"/auth/missoes/{mission.id}/validar/",
-        {"playback_completed": True},
         format="json",
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "tempo mínimo" in response.data["error"].lower()
     assert response.data["remaining_seconds"] > 0
+
+
+@pytest.mark.django_db
+def test_validate_video_requires_recent_heartbeat(authenticated_client, create_mission):
+    mission = create_mission(points_value=100, mission_type="video")
+    client, user = authenticated_client()
+    client.post(f"/auth/missoes/{mission.id}/iniciar/")
+    set_consumption_progress(
+        user,
+        mission,
+        progress_seconds=60,
+        last_heartbeat_offset_seconds=120,
+    )
+
+    response = client.post(
+        f"/auth/missoes/{mission.id}/validar/",
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "heartbeat recente" in response.data["error"].lower()
+    assert response.data["recent_heartbeat"] is False
+
+
+@pytest.mark.django_db
+def test_video_consumption_heartbeat_tracks_progress(authenticated_client, create_mission):
+    mission = create_mission(points_value=100, mission_type="video")
+    client, user = authenticated_client()
+    client.post(f"/auth/missoes/{mission.id}/iniciar/")
+
+    first_heartbeat = client.post(
+        f"/auth/missoes/{mission.id}/heartbeat/",
+        format="json",
+    )
+
+    assert first_heartbeat.status_code == status.HTTP_200_OK
+    assert first_heartbeat.data["credited_seconds"] == 0
+    assert first_heartbeat.data["heartbeat_count"] == 1
+
+    MissionCompletions.objects.filter(user=user, mission=mission).update(
+        last_consumption_heartbeat_at=timezone.now() - timedelta(seconds=20)
+    )
+
+    second_heartbeat = client.post(
+        f"/auth/missoes/{mission.id}/heartbeat/",
+        {"mark_complete": True},
+        format="json",
+    )
+
+    assert second_heartbeat.status_code == status.HTTP_200_OK
+    assert second_heartbeat.data["credited_seconds"] > 0
+    assert second_heartbeat.data["consumption_marked_complete_at"] is not None
+    assert second_heartbeat.data["heartbeat_count"] == 2
 
 
 @pytest.mark.django_db

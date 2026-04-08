@@ -352,6 +352,10 @@ class MissionSerializer(serializers.ModelSerializer):
                     'started_at': completion.started_at,
                     'completed_at': completion.completed_at,
                     'consumption_validated_at': completion.consumption_validated_at,
+                    'consumption_progress_seconds': completion.consumption_progress_seconds,
+                    'consumption_heartbeat_count': completion.consumption_heartbeat_count,
+                    'last_consumption_heartbeat_at': completion.last_consumption_heartbeat_at,
+                    'consumption_marked_complete_at': completion.consumption_marked_complete_at,
                 }
             except MissionCompletions.DoesNotExist:
                 return None
@@ -445,9 +449,15 @@ class MissionCompletionsSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'mission', 'mission_title', 'mission_description',
             'mission_points_value', 'points_earned', 'status', 'started_at',
-            'completed_at', 'consumption_validated_at'
+            'completed_at', 'consumption_validated_at',
+            'consumption_progress_seconds', 'consumption_heartbeat_count',
+            'last_consumption_heartbeat_at', 'consumption_marked_complete_at',
         ]
-        read_only_fields = ['id', 'started_at', 'completed_at', 'consumption_validated_at']
+        read_only_fields = [
+            'id', 'started_at', 'completed_at', 'consumption_validated_at',
+            'consumption_progress_seconds', 'consumption_heartbeat_count',
+            'last_consumption_heartbeat_at', 'consumption_marked_complete_at',
+        ]
 
     def validate_points_earned(self, value):
         if value < 0:

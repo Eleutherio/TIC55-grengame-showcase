@@ -1,11 +1,26 @@
 from __future__ import annotations
 
+import logging
+import socket
+import struct
 from typing import Iterable
 
+from django.conf import settings
 from PIL import Image, UnidentifiedImageError
 
 
+logger = logging.getLogger(__name__)
+
+
 class FileUploadSecurityError(ValueError):
+    pass
+
+
+class MalwareScanUnavailableError(RuntimeError):
+    pass
+
+
+class MalwareDetectedError(RuntimeError):
     pass
 
 
@@ -88,6 +103,83 @@ def _validate_content_type(normalized_content_type: str, allowed_types: Iterable
         raise FileUploadSecurityError(error_message)
 
 
+def _is_malware_scan_enabled():
+    return bool(getattr(settings, "UPLOAD_MALWARE_SCAN_ENABLED", False))
+
+
+def _is_malware_scan_fail_closed():
+    return bool(getattr(settings, "UPLOAD_MALWARE_SCAN_FAIL_CLOSED", False))
+
+
+def _read_clamd_response(stream_socket):
+    response = b""
+    while True:
+        chunk = stream_socket.recv(4096)
+        if not chunk:
+            break
+        response += chunk
+        if b"\x00" in chunk:
+            break
+
+    normalized_response = response.replace(b"\x00", b"").decode(
+        "utf-8",
+        errors="replace",
+    ).strip()
+    if not normalized_response:
+        raise MalwareScanUnavailableError("Scanner antimalware nao respondeu.")
+
+    return normalized_response
+
+
+def _clamav_scan_uploaded_file(uploaded_file):
+    host = getattr(settings, "UPLOAD_MALWARE_SCAN_HOST", "127.0.0.1")
+    port = int(getattr(settings, "UPLOAD_MALWARE_SCAN_PORT", 3310))
+    timeout = float(getattr(settings, "UPLOAD_MALWARE_SCAN_TIMEOUT_SECONDS", 10.0))
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as stream_socket:
+            stream_socket.sendall(b"zINSTREAM\0")
+            _rewind_uploaded_file(uploaded_file)
+            while True:
+                chunk = uploaded_file.read(8192)
+                if not chunk:
+                    break
+                stream_socket.sendall(struct.pack(">I", len(chunk)))
+                stream_socket.sendall(chunk)
+            stream_socket.sendall(struct.pack(">I", 0))
+            response = _read_clamd_response(stream_socket)
+    except (OSError, ValueError) as exc:
+        raise MalwareScanUnavailableError(
+            "Nao foi possivel conectar ao scanner antimalware."
+        ) from exc
+    finally:
+        _rewind_uploaded_file(uploaded_file)
+
+    upper_response = response.upper()
+    if "FOUND" in upper_response:
+        raise MalwareDetectedError(response)
+    if not upper_response.endswith("OK"):
+        raise MalwareScanUnavailableError(response)
+
+
+def _scan_uploaded_file_for_malware(uploaded_file):
+    if not _is_malware_scan_enabled():
+        return
+
+    try:
+        _clamav_scan_uploaded_file(uploaded_file)
+    except MalwareDetectedError as exc:
+        raise FileUploadSecurityError(
+            "Arquivo bloqueado pela verificacao antimalware."
+        ) from exc
+    except MalwareScanUnavailableError as exc:
+        logger.warning("Malware scan indisponivel para upload: %s", exc)
+        if _is_malware_scan_fail_closed():
+            raise FileUploadSecurityError(
+                "Nao foi possivel validar a seguranca do arquivo no momento."
+            ) from exc
+
+
 def validate_image_upload(
     uploaded_file,
     *,
@@ -117,6 +209,7 @@ def validate_image_upload(
         IMAGE_FORMAT_MIME_TYPES[detected_format],
         invalid_format_message,
     )
+    _scan_uploaded_file_for_malware(uploaded_file)
     return IMAGE_FORMAT_EXTENSIONS[detected_format]
 
 
@@ -169,3 +262,4 @@ def validate_video_upload(
         VIDEO_SIGNATURE_MIME_TYPES[detected_signature],
         invalid_format_message,
     )
+    _scan_uploaded_file_for_malware(uploaded_file)

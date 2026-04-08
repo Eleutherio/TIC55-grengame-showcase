@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "../config/api";
 
@@ -24,6 +24,8 @@ type MissaoLeituraProps = {
   completion?: {
     completed: boolean;
     points_earned: number;
+    consumption_progress_seconds?: number;
+    consumption_marked_complete_at?: string | null;
   } | null;
   totalMissions: number;
 };
@@ -32,18 +34,27 @@ type TrailMission = {
   id: number;
 };
 
-export default function MissaoLeitura({ mission, onComplete, isCompleted, totalMissions }: MissaoLeituraProps) {
+export default function MissaoLeitura({
+  mission,
+  onComplete,
+  isCompleted,
+  completion,
+  totalMissions,
+}: MissaoLeituraProps) {
   const navigate = useNavigate();
   const [hasReadAll, setHasReadAll] = useState(isCompleted);
-  const [hasScrolledToEnd, setHasScrolledToEnd] = useState(isCompleted);
-  const [timeElapsed, setTimeElapsed] = useState(0);
+  const [hasScrolledToEnd, setHasScrolledToEnd] = useState(
+    isCompleted || Boolean(completion?.consumption_marked_complete_at),
+  );
+  const [serverProgressSeconds, setServerProgressSeconds] = useState(
+    Math.max(0, completion?.consumption_progress_seconds ?? 0),
+  );
   const [isCompleting, setIsCompleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(
     typeof window !== "undefined" ? window.innerWidth <= 768 : false,
   );
-  const pageRef = useRef<HTMLDivElement>(null);
-  const startTimeRef = useRef<number>(Date.now());
+  const heartbeatInFlightRef = useRef(false);
 
   const textContent = mission.content_data.text || "";
   const tip = mission.content_data.tip;
@@ -66,22 +77,65 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, totalM
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Timer para contar tempo de leitura
+  const sendConsumptionHeartbeat = useEffectEvent(
+    async (markComplete = false) => {
+      if (isCompleted || heartbeatInFlightRef.current) return;
+      if (
+        !markComplete &&
+        typeof document !== "undefined" &&
+        document.visibilityState !== "visible"
+      ) {
+        return;
+      }
+
+      heartbeatInFlightRef.current = true;
+      try {
+        const token = localStorage.getItem("accessToken");
+        const response = await fetch(
+          `${API_URL}/auth/missoes/${mission.id}/heartbeat/`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(markComplete ? { mark_complete: true } : {}),
+          },
+        );
+
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data) {
+          return;
+        }
+
+        if (typeof data.progress_seconds === "number") {
+          setServerProgressSeconds((current) =>
+            Math.max(current, data.progress_seconds),
+          );
+        }
+        if (data.consumption_marked_complete_at) {
+          setHasScrolledToEnd(true);
+        }
+      } finally {
+        heartbeatInFlightRef.current = false;
+      }
+    },
+  );
+
+  useEffect(() => {
+    if (isCompleted) return;
+    void sendConsumptionHeartbeat(false);
+  }, [isCompleted, mission.id, sendConsumptionHeartbeat]);
+
   useEffect(() => {
     if (isCompleted) return;
 
-    const interval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-      setTimeElapsed(elapsed);
+    const interval = window.setInterval(() => {
+      void sendConsumptionHeartbeat(false);
+    }, 10000);
 
-      // Verifica se cumpriu ambos requisitos: tempo E scroll
-      if (elapsed >= minReadTimeSeconds && hasScrolledToEnd) {
-        setHasReadAll(true);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [isCompleted, minReadTimeSeconds, hasScrolledToEnd]);
+    return () => window.clearInterval(interval);
+  }, [isCompleted, mission.id, sendConsumptionHeartbeat]);
 
   useEffect(() => {
     const onScroll = () => {
@@ -93,19 +147,45 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, totalM
 
       if (scrollTop + windowHeight >= documentHeight * 0.9) {
         setHasScrolledToEnd(true);
+        void sendConsumptionHeartbeat(true);
       }
     };
 
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
-  }, [hasScrolledToEnd, isCompleted]);
+  }, [hasScrolledToEnd, isCompleted, sendConsumptionHeartbeat]);
+
+  useEffect(() => {
+    if (typeof completion?.consumption_progress_seconds === "number") {
+      setServerProgressSeconds((current) =>
+        Math.max(current, completion.consumption_progress_seconds ?? 0),
+      );
+    }
+
+    if (completion?.consumption_marked_complete_at) {
+      setHasScrolledToEnd(true);
+    }
+  }, [
+    completion?.consumption_marked_complete_at,
+    completion?.consumption_progress_seconds,
+  ]);
+
+  useEffect(() => {
+    setHasReadAll(
+      isCompleted ||
+        (hasScrolledToEnd && serverProgressSeconds >= minReadTimeSeconds),
+    );
+  }, [hasScrolledToEnd, isCompleted, minReadTimeSeconds, serverProgressSeconds]);
 
   useEffect(() => {
     if (isCompleted) {
       setHasReadAll(true);
       setHasScrolledToEnd(true);
+      setServerProgressSeconds((current) =>
+        Math.max(current, minReadTimeSeconds),
+      );
     }
-  }, [isCompleted]);
+  }, [isCompleted, minReadTimeSeconds]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -124,7 +204,7 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, totalM
       setIsCompleting(true);
       try {
         setActionError(null);
-        await onComplete({ scroll_completed: true });
+        await onComplete();
         return;
       } catch (error) {
         const message =
@@ -178,7 +258,6 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, totalM
 
   return (
     <div
-      ref={pageRef}
       style={{
         minHeight: "calc(100vh - 24px)",
         backgroundColor: "#EEF1F5",
@@ -472,13 +551,13 @@ export default function MissaoLeitura({ mission, onComplete, isCompleted, totalM
         }}>
           {minReadTimeMinutes > 0 && (
             <>
-              {timeElapsed < minReadTimeSeconds && (
+              {serverProgressSeconds < minReadTimeSeconds && (
                 <div style={{
                   backgroundColor: "#E3E8F0",
                   padding: "8px 16px",
                   borderRadius: "8px",
                 }}>
-                  ⏱️ Tempo de leitura: {formatTime(timeElapsed)} / {formatTime(minReadTimeSeconds)}
+                  ⏱️ Tempo validado: {formatTime(serverProgressSeconds)} / {formatTime(minReadTimeSeconds)}
                 </div>
               )}
               {!hasScrolledToEnd && (

@@ -10,6 +10,23 @@ from core.models import Game, Mission, MissionCompletions, WordleHintUsage
 User = get_user_model()
 
 
+def set_consumption_progress(
+    user,
+    mission,
+    *,
+    progress_seconds,
+    heartbeat_count=2,
+    mark_complete=True,
+):
+    heartbeat_reference = timezone.now()
+    MissionCompletions.objects.filter(user=user, mission=mission).update(
+        consumption_progress_seconds=progress_seconds,
+        consumption_heartbeat_count=heartbeat_count,
+        last_consumption_heartbeat_at=heartbeat_reference,
+        consumption_marked_complete_at=heartbeat_reference if mark_complete else None,
+    )
+
+
 @pytest.fixture
 def api_client():
     return APIClient()
@@ -421,12 +438,9 @@ class TestVideoLeituraPoints:
         mission = create_video_mission(points=50)
         
         client.post(f'/auth/missoes/{mission.id}/iniciar/')
-        MissionCompletions.objects.filter(user=user, mission=mission).update(
-            started_at=timezone.now() - timedelta(minutes=2)
-        )
+        set_consumption_progress(user, mission, progress_seconds=60)
         validate_response = client.post(
             f'/auth/missoes/{mission.id}/validar/',
-            {'playback_completed': True},
             format='json',
         )
         assert validate_response.status_code == status.HTTP_200_OK
@@ -446,12 +460,9 @@ class TestVideoLeituraPoints:
         mission = create_video_mission(points=50)
         
         client.post(f'/auth/missoes/{mission.id}/iniciar/')
-        MissionCompletions.objects.filter(user=user, mission=mission).update(
-            started_at=timezone.now() - timedelta(minutes=2)
-        )
+        set_consumption_progress(user, mission, progress_seconds=60)
         validate_response = client.post(
             f'/auth/missoes/{mission.id}/validar/',
-            {'playback_completed': True},
             format='json',
         )
         assert validate_response.status_code == status.HTTP_200_OK
@@ -483,9 +494,7 @@ class TestVideoLeituraPoints:
         mission = create_video_mission(points=50)
 
         client.post(f'/auth/missoes/{mission.id}/iniciar/')
-        MissionCompletions.objects.filter(user=user, mission=mission).update(
-            started_at=timezone.now() - timedelta(minutes=2)
-        )
+        set_consumption_progress(user, mission, progress_seconds=60)
 
         response = client.patch(f'/auth/missoes/{mission.id}/completar/')
 

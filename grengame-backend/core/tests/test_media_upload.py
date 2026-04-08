@@ -1,10 +1,12 @@
 import pytest
 from io import BytesIO
+from django.test import override_settings
 from django.urls import reverse
 from django.core.files.uploadedfile import SimpleUploadedFile
 from PIL import Image
 from rest_framework.test import APIClient
 from core.models import User
+from core import upload_security
 
 
 @pytest.fixture
@@ -137,3 +139,64 @@ def test_user_update_accepts_valid_avatar_upload(api_client, player_user, imagem
 
     assert response.status_code == 200
     assert response.data['avatar_url']
+
+
+@pytest.mark.django_db
+@override_settings(UPLOAD_MALWARE_SCAN_ENABLED=True)
+def test_admin_upload_rejects_media_flagged_by_antimalware(
+    api_client,
+    admin_user,
+    video_valido,
+    monkeypatch,
+):
+    api_client.force_authenticate(user=admin_user)
+    url = reverse('core:course-list-create')
+
+    def fake_scan(_uploaded_file):
+        raise upload_security.MalwareDetectedError("stream: Eicar-Test-Signature FOUND")
+
+    monkeypatch.setattr(upload_security, "_clamav_scan_uploaded_file", fake_scan)
+
+    response = api_client.post(
+        url,
+        {
+            'name': 'Curso Malicioso',
+            'video_url': video_valido,
+        },
+        format='multipart',
+    )
+
+    assert response.status_code == 400
+    assert response.data['video_url'][0] == 'Arquivo bloqueado pela verificacao antimalware.'
+
+
+@pytest.mark.django_db
+@override_settings(
+    UPLOAD_MALWARE_SCAN_ENABLED=True,
+    UPLOAD_MALWARE_SCAN_FAIL_CLOSED=True,
+)
+def test_admin_upload_fails_closed_when_antimalware_is_unavailable(
+    api_client,
+    admin_user,
+    imagem_valida,
+    monkeypatch,
+):
+    api_client.force_authenticate(user=admin_user)
+    url = reverse('core:course-list-create')
+
+    def fake_scan(_uploaded_file):
+        raise upload_security.MalwareScanUnavailableError("scanner offline")
+
+    monkeypatch.setattr(upload_security, "_clamav_scan_uploaded_file", fake_scan)
+
+    response = api_client.post(
+        url,
+        {
+            'name': 'Curso Sem Scanner',
+            'image_url': imagem_valida,
+        },
+        format='multipart',
+    )
+
+    assert response.status_code == 400
+    assert response.data['image_url'][0] == 'Nao foi possivel validar a seguranca do arquivo no momento.'

@@ -19,8 +19,10 @@ type Mission = {
   content_data: {
     url?: string;
     video_url?: string;
+    duration?: number;
     text?: string;
     tip?: string;
+    min_read_time?: number;
     questions?: Array<{
       question: string;
       options: string[];
@@ -42,6 +44,10 @@ type MissionCompletion = {
   started_at?: string | null;
   completed_at: string | null;
   consumption_validated_at?: string | null;
+  consumption_progress_seconds?: number;
+  consumption_heartbeat_count?: number;
+  last_consumption_heartbeat_at?: string | null;
+  consumption_marked_complete_at?: string | null;
 };
 
 type TrailMission = {
@@ -124,9 +130,16 @@ export default function Missao() {
               if (isMounted) {
                 setCompletion({
                   completed: false,
+                  status: "in_progress",
                   points_earned: 0,
                   stars_earned: 0,
+                  started_at: new Date().toISOString(),
                   completed_at: null,
+                  consumption_validated_at: null,
+                  consumption_progress_seconds: 0,
+                  consumption_heartbeat_count: 0,
+                  last_consumption_heartbeat_at: null,
+                  consumption_marked_complete_at: null,
                 });
               }
             }

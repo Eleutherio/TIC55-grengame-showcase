@@ -269,6 +269,24 @@ class MissionCompletions(models.Model):
         blank=True,
         verbose_name="Consumo validado em",
     )
+    consumption_progress_seconds = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Progresso de consumo em segundos",
+    )
+    consumption_heartbeat_count = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Quantidade de heartbeats de consumo",
+    )
+    last_consumption_heartbeat_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Ultimo heartbeat de consumo em",
+    )
+    consumption_marked_complete_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Consumo marcado como concluido em",
+    )
     points_earned = models.IntegerField(
         default=0,
         verbose_name="Pontos Ganhos",
@@ -303,6 +321,45 @@ class MissionCompletions(models.Model):
         if self.status == "completed" and self.completed_at is None:
             self.completed_at = now
         super().save(*args, **kwargs)
+
+    def register_consumption_heartbeat(
+        self,
+        *,
+        reference_time,
+        min_interval_seconds,
+        max_credit_seconds,
+    ):
+        if self.last_consumption_heartbeat_at is None:
+            self.last_consumption_heartbeat_at = reference_time
+            self.consumption_heartbeat_count += 1
+            return {
+                "accepted": True,
+                "credited_seconds": 0,
+                "wait_seconds": 0,
+            }
+
+        elapsed_seconds = int(
+            (reference_time - self.last_consumption_heartbeat_at).total_seconds()
+        )
+        elapsed_seconds = max(elapsed_seconds, 0)
+
+        if elapsed_seconds < min_interval_seconds:
+            return {
+                "accepted": False,
+                "credited_seconds": 0,
+                "wait_seconds": min_interval_seconds - elapsed_seconds,
+            }
+
+        credited_seconds = min(elapsed_seconds, max_credit_seconds)
+        self.consumption_progress_seconds += max(credited_seconds, 0)
+        self.last_consumption_heartbeat_at = reference_time
+        self.consumption_heartbeat_count += 1
+
+        return {
+            "accepted": True,
+            "credited_seconds": credited_seconds,
+            "wait_seconds": 0,
+        }
 
 
 class WordleHintUsage(models.Model):
