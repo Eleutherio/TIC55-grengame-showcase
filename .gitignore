@@ -120,3 +120,5 @@ npm-debug.log*
 
 # Docs internos
 agents.md
+AGENTS.md
+.agents/*.md
