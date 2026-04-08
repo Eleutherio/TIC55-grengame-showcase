@@ -1,43 +1,52 @@
-name: Keepalive Render Backend
+# .github/workflows/keep-alive.yml
+name: Keep Alive
 
 on:
   schedule:
-    # BRT (UTC-3): seg-sex, 08:00-20:59, a cada 10 min
-    - cron: "*/10 11-23 * * 1-5"
+    - cron: '0 12 */3 * *'
   workflow_dispatch:
 
 jobs:
-  ping-backend:
+  ping-supabase:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping health endpoint with retry
+      - name: Ping Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          URL="https://grengame-backend.onrender.com/health/"
+          curl --fail -X GET \
+            "$SUPABASE_URL/auth/v1/settings" \
+            -H "apikey: $SUPABASE_ANON_KEY"
+
+  ping-render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render
+        run: |
+          URL="https://grengame-backend.onrender.com/health"
           MAX_RETRIES=5
           RETRY_DELAY=15
           SUCCESS=false
 
           for i in $(seq 1 $MAX_RETRIES); do
-            echo "🔁 Attempt $i of $MAX_RETRIES..."
-
+            echo "🔁 Tentativa $i de $MAX_RETRIES..."
             HTTP_CODE=$(curl -o /dev/null -s -w "%{http_code}" \
-              --max-time 40 \
-              --connect-timeout 10 \
+              --max-time 90 \
+              --connect-timeout 15 \
               "$URL")
-
             echo "   HTTP status: $HTTP_CODE"
-
             if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 400 ]; then
-              echo "✅ Backend is alive (HTTP $HTTP_CODE)"
+              echo "✅ Backend respondeu (HTTP $HTTP_CODE)"
               SUCCESS=true
               break
             else
-              echo "⚠️  Got HTTP $HTTP_CODE — waiting ${RETRY_DELAY}s before retry..."
+              echo "⚠️  HTTP $HTTP_CODE — aguardando ${RETRY_DELAY}s..."
               sleep $RETRY_DELAY
             fi
           done
 
           if [ "$SUCCESS" = false ]; then
-            echo "❌ Backend did not respond after $MAX_RETRIES attempts."
+            echo "❌ Backend não respondeu após $MAX_RETRIES tentativas."
             exit 1
           fi
