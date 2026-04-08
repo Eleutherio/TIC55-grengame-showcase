@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Ignora falso-positivo de confirm_password nos testes de reset"
+condition = "AND"
+regexTarget = "line"
+paths = ['''grengame-backend/core/tests/test_password_reset\.py$''']
+regexes = ['''confirm_password''']
