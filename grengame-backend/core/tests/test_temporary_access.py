@@ -72,7 +72,8 @@ def test_temporary_access_request_success_creates_pending_request_without_accoun
 
 
 @pytest.mark.django_db
-def test_temporary_access_request_disabled_by_default(api_client):
+@override_settings(TEMPORARY_ACCESS_SELF_SERVICE_ENABLED=False)
+def test_temporary_access_request_returns_503_when_self_service_is_disabled(api_client):
     response = api_client.post(
         "/auth/temporary-access/request/",
         {

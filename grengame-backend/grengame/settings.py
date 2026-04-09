@@ -126,7 +126,7 @@ except ValueError:
 
 TEMPORARY_ACCESS_SELF_SERVICE_ENABLED = os.getenv(
     "TEMPORARY_ACCESS_SELF_SERVICE_ENABLED",
-    "False",
+    "True",
 ).strip().lower() in ("1", "true", "yes", "on")
 TEMPORARY_ACCESS_ALLOWED_EMAIL_DOMAINS = tuple(
     domain.strip().lower()
