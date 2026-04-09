@@ -146,3 +146,28 @@ def send_temporary_access_activation_email(
             "activation_link": _build_temporary_access_activation_link(to_email),
         },
     )
+
+
+def send_temporary_access_review_email(
+    *,
+    to_email,
+    requester_name,
+    requester_email,
+    requested_at,
+    approve_link,
+    reject_link,
+    admin_login_link="",
+):
+    return _send_brevo_template_email(
+        to_email=to_email,
+        subject="Nova solicitacao pendente de acesso temporario - GrenGame",
+        template_env_name="BREVO_TEMP_ACCESS_REVIEW_TEMPLATE_ID",
+        data={
+            "requester_name": requester_name,
+            "requester_email": requester_email,
+            "requested_at": requested_at,
+            "approve_link": approve_link,
+            "reject_link": reject_link,
+            "admin_login_link": admin_login_link,
+        },
+    )

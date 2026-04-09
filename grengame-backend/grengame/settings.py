@@ -136,6 +136,21 @@ TEMPORARY_ACCESS_ALLOWED_EMAIL_DOMAINS = tuple(
     ).split(",")
     if domain.strip()
 )
+TEMPORARY_ACCESS_REVIEWER_EMAILS = tuple(
+    email.strip().lower()
+    for email in os.getenv(
+        "TEMPORARY_ACCESS_REVIEWER_EMAILS",
+        "",
+    ).split(",")
+    if email.strip()
+)
+try:
+    TEMPORARY_ACCESS_EMAIL_REVIEW_TOKEN_TTL_MINUTES = max(
+        int(os.getenv("TEMPORARY_ACCESS_EMAIL_REVIEW_TOKEN_TTL_MINUTES", "20")),
+        5,
+    )
+except ValueError:
+    TEMPORARY_ACCESS_EMAIL_REVIEW_TOKEN_TTL_MINUTES = 20
 
 TEMP_ACCESS_LOGIN_URL = os.getenv(
     "TEMP_ACCESS_LOGIN_URL",

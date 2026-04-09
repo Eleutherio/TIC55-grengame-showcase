@@ -32,6 +32,7 @@ from .views import (
     TemporaryAccessRequestView,
     TemporaryAccessPendingListView,
     TemporaryAccessApproveView,
+    TemporaryAccessEmailReviewView,
     TemporaryAccessRejectView,
     TemporaryAccessVerifyView,
     TemporaryAccessConfirmView,
@@ -100,6 +101,7 @@ urlpatterns = [
     path('temporary-access/requests/', TemporaryAccessPendingListView.as_view(), name='temporary-access-pending-list'),
     path('temporary-access/requests/<int:request_id>/approve/', TemporaryAccessApproveView.as_view(), name='temporary-access-approve'),
     path('temporary-access/requests/<int:request_id>/reject/', TemporaryAccessRejectView.as_view(), name='temporary-access-reject'),
+    path('temporary-access/email-review/<str:token>/', TemporaryAccessEmailReviewView.as_view(), name='temporary-access-email-review'),
     path('temporary-access/verify/', TemporaryAccessVerifyView.as_view(), name='temporary-access-verify'),
     path('temporary-access/confirm/', TemporaryAccessConfirmView.as_view(), name='temporary-access-confirm'),
 

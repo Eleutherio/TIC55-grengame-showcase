@@ -732,6 +732,10 @@ class TemporaryAccessRequest(models.Model):
         related_name="reviewed_temporary_access_requests",
         verbose_name="Revisada por",
     )
+    reviewed_email = models.EmailField(
+        blank=True,
+        verbose_name="E-mail que revisou",
+    )
     provisioned_user = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -765,6 +769,125 @@ class TemporaryAccessRequest(models.Model):
 
     def __str__(self):
         return f"{self.email} - {self.status}"
+
+
+class TemporaryAccessEmailReviewToken(models.Model):
+    ACTION_APPROVE = "approve"
+    ACTION_REJECT = "reject"
+
+    ACTION_CHOICES = [
+        (ACTION_APPROVE, "Aprovar"),
+        (ACTION_REJECT, "Rejeitar"),
+    ]
+
+    RESULT_PENDING = "pending"
+    RESULT_APPROVED = "approved"
+    RESULT_REJECTED = "rejected"
+    RESULT_EXPIRED = "expired"
+    RESULT_ALREADY_REVIEWED = "already_reviewed"
+    RESULT_INVALIDATED = "invalidated"
+
+    RESULT_CHOICES = [
+        (RESULT_PENDING, "Pendente"),
+        (RESULT_APPROVED, "Aprovada"),
+        (RESULT_REJECTED, "Rejeitada"),
+        (RESULT_EXPIRED, "Expirada"),
+        (RESULT_ALREADY_REVIEWED, "Ja revisada"),
+        (RESULT_INVALIDATED, "Invalidada"),
+    ]
+
+    access_request = models.ForeignKey(
+        TemporaryAccessRequest,
+        on_delete=models.CASCADE,
+        related_name="email_review_tokens",
+        verbose_name="Solicitacao de acesso",
+    )
+    reviewer_email = models.EmailField(verbose_name="E-mail do revisor")
+    action = models.CharField(
+        max_length=20,
+        choices=ACTION_CHOICES,
+        verbose_name="Acao autorizada",
+    )
+    token_digest = models.CharField(
+        max_length=64,
+        unique=True,
+        verbose_name="Digest do token",
+    )
+    expires_at = models.DateTimeField(verbose_name="Expira em")
+    is_used = models.BooleanField(default=False, verbose_name="Token usado")
+    used_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Usado em",
+    )
+    used_ip = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        verbose_name="IP de uso",
+    )
+    used_user_agent = models.CharField(
+        max_length=512,
+        blank=True,
+        verbose_name="User-Agent de uso",
+    )
+    result_status = models.CharField(
+        max_length=32,
+        choices=RESULT_CHOICES,
+        default=RESULT_PENDING,
+        verbose_name="Resultado",
+    )
+    result_detail = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="Detalhe do resultado",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+
+    class Meta:
+        db_table = "core_temporaryaccessemailreviewtoken"
+        indexes = [
+            models.Index(
+                fields=["access_request", "is_used"],
+                name="idx_taert_request_used",
+            ),
+            models.Index(
+                fields=["reviewer_email", "action"],
+                name="idx_taert_reviewer_action",
+            ),
+        ]
+
+    def issue_token(self) -> str:
+        raw_token = generate_session_token()
+        self.token_digest = hash_session_token(raw_token)
+        return raw_token
+
+    def mark_result(
+        self,
+        *,
+        result_status: str,
+        result_detail: str = "",
+        ip_address: str | None = None,
+        user_agent: str = "",
+    ) -> None:
+        self.is_used = True
+        self.used_at = timezone.now()
+        self.used_ip = ip_address
+        self.used_user_agent = str(user_agent or "")[:512]
+        self.result_status = result_status
+        self.result_detail = str(result_detail or "")[:255]
+        self.save(
+            update_fields=[
+                "is_used",
+                "used_at",
+                "used_ip",
+                "used_user_agent",
+                "result_status",
+                "result_detail",
+            ]
+        )
+
+    def __str__(self):
+        return f"{self.access_request.email} - {self.action} - {self.reviewer_email}"
 
 
 class TemporaryAccessActivationToken(models.Model):

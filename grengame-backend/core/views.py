@@ -1,4 +1,6 @@
 import logging
+from datetime import timedelta
+from html import escape
 from math import ceil
 from uuid import uuid4
 from django.conf import settings
@@ -7,6 +9,8 @@ from django.contrib.auth.models import update_last_login
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.storage import default_storage
 from django.core.validators import validate_email
+from django.http import HttpResponse
+from django.urls import reverse
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -41,7 +45,10 @@ from .badge_services import (
     resolve_badge_config_value_mode,
 )
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
-from .email_service import send_temporary_access_activation_email
+from .email_service import (
+    send_temporary_access_activation_email,
+    send_temporary_access_review_email,
+)
 from .models import (
     BadgeConfig,
     BadgeTierRule,
@@ -52,6 +59,7 @@ from .models import (
     MissionCompletions,
     PasswordResetToken,
     TemporaryAccessActivationToken,
+    TemporaryAccessEmailReviewToken,
     TemporaryAccessRequest,
     WordleHintUsage,
     UserBadgeUnlock,
@@ -99,6 +107,10 @@ BADGE_CRITERION_LABELS = {
 WORDLE_HINT_COST_POINTS = 10
 
 
+class TemporaryAccessReviewConflictError(Exception):
+    pass
+
+
 def _get_request_client_ip(request):
     forwarded_for = str(request.META.get("HTTP_X_FORWARDED_FOR", "")).strip()
     if forwarded_for:
@@ -111,6 +123,15 @@ def _get_request_client_ip(request):
 def _serialize_temporary_access_request(access_request):
     requested_at = access_request.requested_at
     reviewed_at = access_request.reviewed_at
+    reviewed_by = None
+    if access_request.reviewed_by_id:
+        reviewed_by = (
+            access_request.reviewed_by.get_full_name().strip()
+            or access_request.reviewed_by.email
+        )
+    elif access_request.reviewed_email:
+        reviewed_by = access_request.reviewed_email
+
     return {
         "id": access_request.id,
         "nome": access_request.name,
@@ -126,12 +147,7 @@ def _serialize_temporary_access_request(access_request):
             if reviewed_at
             else None
         ),
-        "reviewed_by": (
-            access_request.reviewed_by.get_full_name().strip()
-            or access_request.reviewed_by.email
-        )
-        if access_request.reviewed_by_id
-        else None,
+        "reviewed_by": reviewed_by,
     }
 
 
@@ -364,6 +380,237 @@ def _issue_temporary_access_activation(nome, contato_email, *, temp_user):
         "activation_expires_at": activation_expires_at,
         "account_expires_at": account_expires_at,
     }
+
+
+def _get_temporary_access_reviewer_emails():
+    return tuple(
+        email.lower()
+        for email in getattr(settings, "TEMPORARY_ACCESS_REVIEWER_EMAILS", ())
+        if isinstance(email, str) and email.strip()
+    )
+
+
+def _build_temporary_access_email_review_expiration():
+    ttl_minutes = max(
+        int(getattr(settings, "TEMPORARY_ACCESS_EMAIL_REVIEW_TOKEN_TTL_MINUTES", 20) or 20),
+        5,
+    )
+    return timezone.now() + timedelta(minutes=ttl_minutes)
+
+
+def _build_temporary_access_email_review_link(request, raw_token):
+    try:
+        relative_url = reverse(
+            "core:temporary-access-email-review",
+            kwargs={"token": raw_token},
+        )
+    except Exception:
+        relative_url = reverse(
+            "temporary-access-email-review",
+            kwargs={"token": raw_token},
+        )
+    return request.build_absolute_uri(relative_url)
+
+
+def _invalidate_temporary_access_email_review_tokens(
+    access_request,
+    *,
+    result_status,
+    result_detail="",
+    exclude_ids=None,
+):
+    exclude_ids = tuple(exclude_ids or ())
+    now = timezone.now()
+    queryset = TemporaryAccessEmailReviewToken.objects.filter(
+        access_request=access_request,
+        is_used=False,
+    )
+    if exclude_ids:
+        queryset = queryset.exclude(id__in=exclude_ids)
+
+    queryset.update(
+        is_used=True,
+        used_at=now,
+        result_status=result_status,
+        result_detail=str(result_detail or "")[:255],
+    )
+
+
+def _send_temporary_access_pending_review_notifications(request, access_request):
+    reviewer_emails = _get_temporary_access_reviewer_emails()
+    if not reviewer_emails:
+        logger.warning(
+            "TEMP_ACCESS_REVIEW_NOTIFICATION_SKIPPED: request_id=%s reason=no_reviewers",
+            access_request.id,
+        )
+        return 0
+
+    sent_count = 0
+    requested_at_display = timezone.localtime(access_request.requested_at).strftime(
+        "%d/%m/%Y %H:%M"
+    )
+    login_url = getattr(settings, "TEMP_ACCESS_LOGIN_URL", "").strip()
+
+    for reviewer_email in reviewer_emails:
+        expires_at = _build_temporary_access_email_review_expiration()
+        approve_token = TemporaryAccessEmailReviewToken(
+            access_request=access_request,
+            reviewer_email=reviewer_email,
+            action=TemporaryAccessEmailReviewToken.ACTION_APPROVE,
+            expires_at=expires_at,
+        )
+        reject_token = TemporaryAccessEmailReviewToken(
+            access_request=access_request,
+            reviewer_email=reviewer_email,
+            action=TemporaryAccessEmailReviewToken.ACTION_REJECT,
+            expires_at=expires_at,
+        )
+        approve_raw_token = approve_token.issue_token()
+        reject_raw_token = reject_token.issue_token()
+        approve_token.save()
+        reject_token.save()
+
+        email_sent = send_temporary_access_review_email(
+            to_email=reviewer_email,
+            requester_name=access_request.name,
+            requester_email=access_request.email,
+            requested_at=requested_at_display,
+            approve_link=_build_temporary_access_email_review_link(
+                request, approve_raw_token
+            ),
+            reject_link=_build_temporary_access_email_review_link(
+                request, reject_raw_token
+            ),
+            admin_login_link=login_url,
+        )
+        if email_sent:
+            sent_count += 1
+            continue
+
+        approve_token.mark_result(
+            result_status=TemporaryAccessEmailReviewToken.RESULT_INVALIDATED,
+            result_detail="notification_failed",
+        )
+        reject_token.mark_result(
+            result_status=TemporaryAccessEmailReviewToken.RESULT_INVALIDATED,
+            result_detail="notification_failed",
+        )
+        logger.warning(
+            "TEMP_ACCESS_REVIEW_NOTIFICATION_FAILED: request_id=%s reviewer_email=%s",
+            access_request.id,
+            reviewer_email,
+        )
+
+    return sent_count
+
+
+def _apply_temporary_access_request_approval(
+    access_request,
+    *,
+    reviewed_by=None,
+    reviewed_email="",
+):
+    existing_user = (
+        User.objects.select_for_update().filter(email=access_request.email).first()
+    )
+    if existing_user is not None:
+        is_pending_temporary_account = (
+            getattr(existing_user, "is_temporary_account", False)
+            and not existing_user.has_usable_password()
+        )
+        if not is_pending_temporary_account:
+            raise TemporaryAccessReviewConflictError(
+                "Ja existe um usuario com este e-mail."
+            )
+
+    temp_user = _provision_temporary_access_user(
+        access_request.name,
+        access_request.email,
+        existing_user=existing_user,
+    )
+    activation_context = _issue_temporary_access_activation(
+        access_request.name,
+        access_request.email,
+        temp_user=temp_user,
+    )
+
+    access_request.status = TemporaryAccessRequest.STATUS_APPROVED
+    access_request.reviewed_at = timezone.now()
+    access_request.reviewed_by = reviewed_by
+    access_request.reviewed_email = str(
+        reviewed_email or getattr(reviewed_by, "email", "") or ""
+    ).strip().lower()
+    access_request.provisioned_user = temp_user
+    access_request.save(
+        update_fields=[
+            "status",
+            "reviewed_at",
+            "reviewed_by",
+            "reviewed_email",
+            "provisioned_user",
+            "updated_at",
+        ]
+    )
+    return activation_context
+
+
+def _apply_temporary_access_request_rejection(
+    access_request,
+    *,
+    reviewed_by=None,
+    reviewed_email="",
+):
+    access_request.status = TemporaryAccessRequest.STATUS_REJECTED
+    access_request.reviewed_at = timezone.now()
+    access_request.reviewed_by = reviewed_by
+    access_request.reviewed_email = str(
+        reviewed_email or getattr(reviewed_by, "email", "") or ""
+    ).strip().lower()
+    access_request.save(
+        update_fields=[
+            "status",
+            "reviewed_at",
+            "reviewed_by",
+            "reviewed_email",
+            "updated_at",
+        ]
+    )
+
+
+def _render_temporary_access_email_review_page(
+    *,
+    title,
+    message,
+    tone="neutral",
+    status_code=status.HTTP_200_OK,
+):
+    palette = {
+        "success": ("#0f7b3d", "#e9fff1", "#1f2937"),
+        "error": ("#b42318", "#fff0f0", "#1f2937"),
+        "warning": ("#b26a00", "#fff7e6", "#1f2937"),
+        "neutral": ("#1d4ed8", "#eff6ff", "#1f2937"),
+    }
+    border_color, background_color, text_color = palette.get(
+        tone, palette["neutral"]
+    )
+
+    html = f"""<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{escape(title)}</title>
+  </head>
+  <body style="margin:0;padding:24px;background:#f4f6fb;font-family:Arial,Helvetica,sans-serif;color:{text_color};">
+    <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid {border_color};border-radius:12px;padding:24px;box-shadow:0 8px 24px rgba(15,23,42,0.08);">
+      <h1 style="margin:0 0 12px 0;font-size:24px;color:{border_color};">{escape(title)}</h1>
+      <p style="margin:0;font-size:15px;line-height:1.6;background:{background_color};padding:16px;border-radius:10px;border:1px solid {border_color};">
+        {escape(message)}
+      </p>
+    </div>
+  </body>
+</html>"""
+    return HttpResponse(html, status=status_code)
 
 
 def _resolve_uploaded_file_url(request, raw_value):
@@ -2408,6 +2655,7 @@ class TemporaryAccessRequestView(APIView):
                     )
                     .first()
                 )
+                should_notify_reviewers = pending_request is None
                 if pending_request is None:
                     pending_request = TemporaryAccessRequest(
                         email=temporary_email,
@@ -2422,6 +2670,7 @@ class TemporaryAccessRequestView(APIView):
                 )[:512]
                 pending_request.reviewed_at = None
                 pending_request.reviewed_by = None
+                pending_request.reviewed_email = ""
                 pending_request.provisioned_user = None
                 pending_request.save()
         except DRFValidationError as exc:
@@ -2441,6 +2690,19 @@ class TemporaryAccessRequestView(APIView):
                 {"error": "Falha ao processar solicitacao. Atualize a pagina e tente novamente."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+        if should_notify_reviewers:
+            try:
+                _send_temporary_access_pending_review_notifications(
+                    request,
+                    pending_request,
+                )
+            except Exception:
+                logger.exception(
+                    "TEMP_ACCESS_REVIEW_NOTIFICATION_EXCEPTION: request_id=%s email=%s",
+                    pending_request.id,
+                    pending_request.email,
+                )
 
         logger.info(
             "TEMP_ACCESS_REQUEST_PENDING: contato_email=%s nome=%s",
@@ -2493,50 +2755,25 @@ class TemporaryAccessApproveView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-                existing_user = (
-                    User.objects.select_for_update()
-                    .filter(email=access_request.email)
-                    .first()
+                activation_context = _apply_temporary_access_request_approval(
+                    access_request,
+                    reviewed_by=request.user,
+                    reviewed_email=request.user.email,
                 )
-                if existing_user is not None:
-                    is_pending_temporary_account = (
-                        getattr(existing_user, "is_temporary_account", False)
-                        and not existing_user.has_usable_password()
-                    )
-                    if not is_pending_temporary_account:
-                        return Response(
-                            {"error": "Ja existe um usuario com este e-mail."},
-                            status=status.HTTP_409_CONFLICT,
-                        )
-
-                temp_user = _provision_temporary_access_user(
-                    access_request.name,
-                    access_request.email,
-                    existing_user=existing_user,
-                )
-                activation_context = _issue_temporary_access_activation(
-                    access_request.name,
-                    access_request.email,
-                    temp_user=temp_user,
-                )
-
-                access_request.status = TemporaryAccessRequest.STATUS_APPROVED
-                access_request.reviewed_at = timezone.now()
-                access_request.reviewed_by = request.user
-                access_request.provisioned_user = temp_user
-                access_request.save(
-                    update_fields=[
-                        "status",
-                        "reviewed_at",
-                        "reviewed_by",
-                        "provisioned_user",
-                        "updated_at",
-                    ]
+                _invalidate_temporary_access_email_review_tokens(
+                    access_request,
+                    result_status=TemporaryAccessEmailReviewToken.RESULT_ALREADY_REVIEWED,
+                    result_detail="reviewed_from_admin_panel",
                 )
         except TemporaryAccessRequest.DoesNotExist:
             return Response(
                 {"error": "Solicitacao nao encontrada."},
                 status=status.HTTP_404_NOT_FOUND,
+            )
+        except TemporaryAccessReviewConflictError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_409_CONFLICT,
             )
         except DRFValidationError as exc:
             detail = exc.detail
@@ -2597,16 +2834,15 @@ class TemporaryAccessRejectView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-                access_request.status = TemporaryAccessRequest.STATUS_REJECTED
-                access_request.reviewed_at = timezone.now()
-                access_request.reviewed_by = request.user
-                access_request.save(
-                    update_fields=[
-                        "status",
-                        "reviewed_at",
-                        "reviewed_by",
-                        "updated_at",
-                    ]
+                _apply_temporary_access_request_rejection(
+                    access_request,
+                    reviewed_by=request.user,
+                    reviewed_email=request.user.email,
+                )
+                _invalidate_temporary_access_email_review_tokens(
+                    access_request,
+                    result_status=TemporaryAccessEmailReviewToken.RESULT_ALREADY_REVIEWED,
+                    result_detail="reviewed_from_admin_panel",
                 )
         except TemporaryAccessRequest.DoesNotExist:
             return Response(
@@ -2633,6 +2869,215 @@ class TemporaryAccessRejectView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class TemporaryAccessEmailReviewView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, token):
+        token_digest = hash_session_token(token)
+        review_token = (
+            TemporaryAccessEmailReviewToken.objects.select_related("access_request")
+            .filter(token_digest=token_digest)
+            .first()
+        )
+        if review_token is None:
+            return _render_temporary_access_email_review_page(
+                title="Link invalido",
+                message=(
+                    "Este link de revisao nao foi reconhecido ou ja foi substituido "
+                    "por um token mais novo."
+                ),
+                tone="error",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if review_token.is_used:
+            title = "Link ja utilizado"
+            message = "Este link de revisao ja foi consumido anteriormente."
+            tone = "warning"
+            status_code = status.HTTP_409_CONFLICT
+            if review_token.result_status == TemporaryAccessEmailReviewToken.RESULT_EXPIRED:
+                title = "Link expirado"
+                message = "Este link expirou e nao pode mais ser utilizado."
+                status_code = status.HTTP_410_GONE
+            elif review_token.result_status == TemporaryAccessEmailReviewToken.RESULT_APPROVED:
+                title = "Solicitacao ja aprovada"
+                message = "A solicitacao vinculada a este link ja foi aprovada."
+            elif review_token.result_status == TemporaryAccessEmailReviewToken.RESULT_REJECTED:
+                title = "Solicitacao ja rejeitada"
+                message = "A solicitacao vinculada a este link ja foi rejeitada."
+            return _render_temporary_access_email_review_page(
+                title=title,
+                message=message,
+                tone=tone,
+                status_code=status_code,
+            )
+
+        reviewer_emails = _get_temporary_access_reviewer_emails()
+        if (
+            not reviewer_emails
+            or review_token.reviewer_email.lower() not in reviewer_emails
+        ):
+            review_token.mark_result(
+                result_status=TemporaryAccessEmailReviewToken.RESULT_INVALIDATED,
+                result_detail="reviewer_not_whitelisted",
+                ip_address=_get_request_client_ip(request),
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
+            return _render_temporary_access_email_review_page(
+                title="Link indisponivel",
+                message=(
+                    "Este link nao esta autorizado para o conjunto atual de revisores."
+                ),
+                tone="error",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        if timezone.now() > review_token.expires_at:
+            review_token.mark_result(
+                result_status=TemporaryAccessEmailReviewToken.RESULT_EXPIRED,
+                result_detail="token_expired",
+                ip_address=_get_request_client_ip(request),
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
+            return _render_temporary_access_email_review_page(
+                title="Link expirado",
+                message="O prazo deste link de revisao expirou. Gere uma nova notificacao se necessario.",
+                tone="warning",
+                status_code=status.HTTP_410_GONE,
+            )
+
+        try:
+            with transaction.atomic():
+                review_token = TemporaryAccessEmailReviewToken.objects.select_for_update().select_related(
+                    "access_request"
+                ).get(id=review_token.id)
+                access_request = TemporaryAccessRequest.objects.select_for_update().get(
+                    id=review_token.access_request_id
+                )
+
+                if review_token.is_used:
+                    return _render_temporary_access_email_review_page(
+                        title="Link ja utilizado",
+                        message="Este link de revisao ja foi consumido anteriormente.",
+                        tone="warning",
+                        status_code=status.HTTP_409_CONFLICT,
+                    )
+
+                if access_request.status != TemporaryAccessRequest.STATUS_PENDING:
+                    review_token.mark_result(
+                        result_status=TemporaryAccessEmailReviewToken.RESULT_ALREADY_REVIEWED,
+                        result_detail=f"already_{access_request.status}",
+                        ip_address=_get_request_client_ip(request),
+                        user_agent=request.META.get("HTTP_USER_AGENT", ""),
+                    )
+                    return _render_temporary_access_email_review_page(
+                        title="Solicitacao ja revisada",
+                        message=(
+                            "Esta solicitacao ja foi decidida anteriormente e o link nao pode mais ser usado."
+                        ),
+                        tone="warning",
+                        status_code=status.HTTP_409_CONFLICT,
+                    )
+
+                if review_token.action == TemporaryAccessEmailReviewToken.ACTION_APPROVE:
+                    activation_context = _apply_temporary_access_request_approval(
+                        access_request,
+                        reviewed_email=review_token.reviewer_email,
+                    )
+                    review_token.mark_result(
+                        result_status=TemporaryAccessEmailReviewToken.RESULT_APPROVED,
+                        result_detail="approved_from_email_link",
+                        ip_address=_get_request_client_ip(request),
+                        user_agent=request.META.get("HTTP_USER_AGENT", ""),
+                    )
+                    _invalidate_temporary_access_email_review_tokens(
+                        access_request,
+                        result_status=TemporaryAccessEmailReviewToken.RESULT_ALREADY_REVIEWED,
+                        result_detail="reviewed_by_email_link",
+                        exclude_ids=(review_token.id,),
+                    )
+                    logger.info(
+                        (
+                            "TEMP_ACCESS_EMAIL_APPROVAL_SUCCESS: request_id=%s email=%s "
+                            "reviewer_email=%s account_expires_at=%s activation_expires_at=%s"
+                        ),
+                        access_request.id,
+                        access_request.email,
+                        review_token.reviewer_email,
+                        activation_context["account_expires_at"].isoformat(),
+                        activation_context["activation_expires_at"].isoformat(),
+                    )
+                    return _render_temporary_access_email_review_page(
+                        title="Solicitacao aprovada",
+                        message=(
+                            "A solicitacao foi aprovada com sucesso. O solicitante recebera o codigo de ativacao por e-mail."
+                        ),
+                        tone="success",
+                        status_code=status.HTTP_200_OK,
+                    )
+
+                _apply_temporary_access_request_rejection(
+                    access_request,
+                    reviewed_email=review_token.reviewer_email,
+                )
+                review_token.mark_result(
+                    result_status=TemporaryAccessEmailReviewToken.RESULT_REJECTED,
+                    result_detail="rejected_from_email_link",
+                    ip_address=_get_request_client_ip(request),
+                    user_agent=request.META.get("HTTP_USER_AGENT", ""),
+                )
+                _invalidate_temporary_access_email_review_tokens(
+                    access_request,
+                    result_status=TemporaryAccessEmailReviewToken.RESULT_ALREADY_REVIEWED,
+                    result_detail="reviewed_by_email_link",
+                    exclude_ids=(review_token.id,),
+                )
+                logger.info(
+                    "TEMP_ACCESS_EMAIL_REJECTION_SUCCESS: request_id=%s email=%s reviewer_email=%s",
+                    access_request.id,
+                    access_request.email,
+                    review_token.reviewer_email,
+                )
+                return _render_temporary_access_email_review_page(
+                    title="Solicitacao rejeitada",
+                    message="A solicitacao foi rejeitada com sucesso.",
+                    tone="success",
+                    status_code=status.HTTP_200_OK,
+                )
+        except DRFValidationError as exc:
+            detail = exc.detail
+            if isinstance(detail, list) and detail:
+                message = str(detail[0])
+            else:
+                message = str(detail)
+            return _render_temporary_access_email_review_page(
+                title="Falha ao revisar solicitacao",
+                message=message,
+                tone="error",
+                status_code=status.HTTP_502_BAD_GATEWAY,
+            )
+        except TemporaryAccessReviewConflictError as exc:
+            return _render_temporary_access_email_review_page(
+                title="Conflito na solicitacao",
+                message=str(exc),
+                tone="warning",
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        except Exception:
+            logger.exception(
+                "TEMP_ACCESS_EMAIL_REVIEW_FAILED: token_id=%s request_id=%s",
+                review_token.id,
+                review_token.access_request_id,
+            )
+            return _render_temporary_access_email_review_page(
+                title="Falha ao revisar solicitacao",
+                message="Nao foi possivel concluir a revisao pelo link neste momento.",
+                tone="error",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class TemporaryAccessVerifyView(APIView):

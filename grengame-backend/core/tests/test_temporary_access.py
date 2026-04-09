@@ -8,7 +8,11 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
 
-from core.models import TemporaryAccessActivationToken, TemporaryAccessRequest
+from core.models import (
+    TemporaryAccessActivationToken,
+    TemporaryAccessEmailReviewToken,
+    TemporaryAccessRequest,
+)
 from core.verification_codes import hash_session_token
 
 User = get_user_model()
@@ -23,6 +27,26 @@ def create_activation_token(user, raw_code="123456", **kwargs):
         token_obj.activation_session_token = hash_session_token(raw_session_token)
     token_obj.save()
     return token_obj
+
+
+def create_email_review_token(
+    access_request,
+    *,
+    reviewer_email="owner@example.com",
+    action=TemporaryAccessEmailReviewToken.ACTION_APPROVE,
+    **kwargs,
+):
+    expires_at = kwargs.pop("expires_at", timezone.now() + timedelta(minutes=15))
+    token_obj = TemporaryAccessEmailReviewToken(
+        access_request=access_request,
+        reviewer_email=reviewer_email,
+        action=action,
+        expires_at=expires_at,
+        **kwargs,
+    )
+    raw_token = token_obj.issue_token()
+    token_obj.save()
+    return token_obj, raw_token
 
 
 @pytest.fixture
@@ -69,6 +93,101 @@ def test_temporary_access_request_success_creates_pending_request_without_accoun
     assert TemporaryAccessActivationToken.objects.count() == 0
     assert "Solicitacao registrada com sucesso." in response.data["message"]
     assert "temporary_access_status" not in response.data
+
+
+@pytest.mark.django_db
+@override_settings(
+    TEMPORARY_ACCESS_SELF_SERVICE_ENABLED=True,
+    TEMPORARY_ACCESS_REVIEWER_EMAILS=("owner@example.com",),
+    TEMP_ACCESS_LOGIN_URL="https://tic55-grengame-showcase.pages.dev/login",
+)
+def test_temporary_access_request_notifies_whitelisted_reviewer(
+    api_client,
+    monkeypatch,
+):
+    captured = []
+
+    def _mock_send_temporary_access_review_email(**kwargs):
+        captured.append(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        "core.views.send_temporary_access_review_email",
+        _mock_send_temporary_access_review_email,
+    )
+
+    response = api_client.post(
+        "/auth/temporary-access/request/",
+        {
+            "nome": "Maria Silva",
+            "email": "maria.silva@gmail.com",
+            "aceite_temporario": True,
+            "aceite_formal": True,
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+    access_request = TemporaryAccessRequest.objects.get(email="maria.silva@gmail.com")
+    tokens = TemporaryAccessEmailReviewToken.objects.filter(access_request=access_request)
+
+    assert len(captured) == 1
+    assert tokens.count() == 2
+    assert captured[0]["to_email"] == "owner@example.com"
+    assert "/auth/temporary-access/email-review/" in captured[0]["approve_link"]
+    assert "/auth/temporary-access/email-review/" in captured[0]["reject_link"]
+    assert captured[0]["admin_login_link"].endswith("/login")
+
+
+@pytest.mark.django_db
+@override_settings(
+    TEMPORARY_ACCESS_SELF_SERVICE_ENABLED=True,
+    TEMPORARY_ACCESS_REVIEWER_EMAILS=("owner@example.com", "backup@example.com"),
+)
+def test_temporary_access_request_keeps_other_reviewer_tokens_when_one_notification_fails(
+    api_client,
+    monkeypatch,
+):
+    captured = []
+
+    def _mock_send_temporary_access_review_email(**kwargs):
+        captured.append(kwargs)
+        return kwargs["to_email"] != "backup@example.com"
+
+    monkeypatch.setattr(
+        "core.views.send_temporary_access_review_email",
+        _mock_send_temporary_access_review_email,
+    )
+
+    response = api_client.post(
+        "/auth/temporary-access/request/",
+        {
+            "nome": "Maria Silva",
+            "email": "maria.silva@gmail.com",
+            "aceite_temporario": True,
+            "aceite_formal": True,
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+    access_request = TemporaryAccessRequest.objects.get(email="maria.silva@gmail.com")
+    owner_tokens = TemporaryAccessEmailReviewToken.objects.filter(
+        access_request=access_request,
+        reviewer_email="owner@example.com",
+    ).order_by("action")
+    backup_tokens = TemporaryAccessEmailReviewToken.objects.filter(
+        access_request=access_request,
+        reviewer_email="backup@example.com",
+    ).order_by("action")
+
+    assert len(captured) == 2
+    assert owner_tokens.count() == 2
+    assert backup_tokens.count() == 2
+    assert all(token.is_used is False for token in owner_tokens)
+    assert all(token.result_status == TemporaryAccessEmailReviewToken.RESULT_PENDING for token in owner_tokens)
+    assert all(token.is_used is True for token in backup_tokens)
+    assert all(token.result_status == TemporaryAccessEmailReviewToken.RESULT_INVALIDATED for token in backup_tokens)
 
 
 @pytest.mark.django_db
@@ -271,6 +390,166 @@ def test_global_admin_can_reject_pending_request_without_provisioning_user(
     assert access_request.status == TemporaryAccessRequest.STATUS_REJECTED
     assert access_request.reviewed_by_id == global_admin_user.id
     assert User.objects.filter(email="maria.silva@gmail.com").exists() is False
+
+
+@pytest.mark.django_db
+@override_settings(TEMPORARY_ACCESS_REVIEWER_EMAILS=("owner@example.com",))
+def test_email_review_link_can_approve_pending_request(
+    api_client,
+    monkeypatch,
+):
+    captured = {}
+    access_request = TemporaryAccessRequest.objects.create(
+        name="Maria Silva",
+        email="maria.silva@gmail.com",
+        accepted_temporary_terms=True,
+        accepted_formal_terms=True,
+        status=TemporaryAccessRequest.STATUS_PENDING,
+    )
+    approve_token, raw_approve_token = create_email_review_token(
+        access_request,
+        reviewer_email="owner@example.com",
+        action=TemporaryAccessEmailReviewToken.ACTION_APPROVE,
+    )
+    reject_token, _ = create_email_review_token(
+        access_request,
+        reviewer_email="owner@example.com",
+        action=TemporaryAccessEmailReviewToken.ACTION_REJECT,
+    )
+
+    def _mock_send_temporary_access_activation_email(**kwargs):
+        captured.update(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        "core.views.send_temporary_access_activation_email",
+        _mock_send_temporary_access_activation_email,
+    )
+
+    response = api_client.get(
+        f"/auth/temporary-access/email-review/{raw_approve_token}/"
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    access_request.refresh_from_db()
+    approve_token.refresh_from_db()
+    reject_token.refresh_from_db()
+    temp_user = User.objects.get(email="maria.silva@gmail.com")
+
+    assert access_request.status == TemporaryAccessRequest.STATUS_APPROVED
+    assert access_request.reviewed_by is None
+    assert access_request.reviewed_email == "owner@example.com"
+    assert access_request.provisioned_user_id == temp_user.id
+    assert approve_token.is_used is True
+    assert (
+        approve_token.result_status
+        == TemporaryAccessEmailReviewToken.RESULT_APPROVED
+    )
+    assert reject_token.is_used is True
+    assert (
+        reject_token.result_status
+        == TemporaryAccessEmailReviewToken.RESULT_ALREADY_REVIEWED
+    )
+    assert "codigo de ativacao" in response.content.decode("utf-8").lower()
+    assert captured["to_email"] == "maria.silva@gmail.com"
+
+
+@pytest.mark.django_db
+@override_settings(TEMPORARY_ACCESS_REVIEWER_EMAILS=("owner@example.com",))
+def test_email_review_link_can_reject_pending_request(api_client):
+    access_request = TemporaryAccessRequest.objects.create(
+        name="Maria Silva",
+        email="maria.silva@gmail.com",
+        accepted_temporary_terms=True,
+        accepted_formal_terms=True,
+        status=TemporaryAccessRequest.STATUS_PENDING,
+    )
+    reject_token, raw_reject_token = create_email_review_token(
+        access_request,
+        reviewer_email="owner@example.com",
+        action=TemporaryAccessEmailReviewToken.ACTION_REJECT,
+    )
+
+    response = api_client.get(
+        f"/auth/temporary-access/email-review/{raw_reject_token}/"
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    access_request.refresh_from_db()
+    reject_token.refresh_from_db()
+
+    assert access_request.status == TemporaryAccessRequest.STATUS_REJECTED
+    assert access_request.reviewed_by is None
+    assert access_request.reviewed_email == "owner@example.com"
+    assert reject_token.is_used is True
+    assert (
+        reject_token.result_status
+        == TemporaryAccessEmailReviewToken.RESULT_REJECTED
+    )
+
+
+@pytest.mark.django_db
+@override_settings(TEMPORARY_ACCESS_REVIEWER_EMAILS=("owner@example.com",))
+def test_email_review_link_expires_and_cannot_be_used(api_client):
+    access_request = TemporaryAccessRequest.objects.create(
+        name="Maria Silva",
+        email="maria.silva@gmail.com",
+        accepted_temporary_terms=True,
+        accepted_formal_terms=True,
+        status=TemporaryAccessRequest.STATUS_PENDING,
+    )
+    expired_token, raw_expired_token = create_email_review_token(
+        access_request,
+        reviewer_email="owner@example.com",
+        expires_at=timezone.now() - timedelta(minutes=1),
+    )
+
+    response = api_client.get(
+        f"/auth/temporary-access/email-review/{raw_expired_token}/"
+    )
+
+    assert response.status_code == status.HTTP_410_GONE
+    expired_token.refresh_from_db()
+    access_request.refresh_from_db()
+
+    assert expired_token.is_used is True
+    assert (
+        expired_token.result_status
+        == TemporaryAccessEmailReviewToken.RESULT_EXPIRED
+    )
+    assert access_request.status == TemporaryAccessRequest.STATUS_PENDING
+
+
+@pytest.mark.django_db
+@override_settings(TEMPORARY_ACCESS_REVIEWER_EMAILS=("owner@example.com",))
+def test_email_review_link_is_blocked_when_reviewer_leaves_whitelist(api_client):
+    access_request = TemporaryAccessRequest.objects.create(
+        name="Maria Silva",
+        email="maria.silva@gmail.com",
+        accepted_temporary_terms=True,
+        accepted_formal_terms=True,
+        status=TemporaryAccessRequest.STATUS_PENDING,
+    )
+    review_token, raw_review_token = create_email_review_token(
+        access_request,
+        reviewer_email="other@example.com",
+        action=TemporaryAccessEmailReviewToken.ACTION_APPROVE,
+    )
+
+    response = api_client.get(
+        f"/auth/temporary-access/email-review/{raw_review_token}/"
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    review_token.refresh_from_db()
+    access_request.refresh_from_db()
+
+    assert review_token.is_used is True
+    assert (
+        review_token.result_status
+        == TemporaryAccessEmailReviewToken.RESULT_INVALIDATED
+    )
+    assert access_request.status == TemporaryAccessRequest.STATUS_PENDING
 
 
 @pytest.mark.django_db
