@@ -498,24 +498,36 @@ def test_validate_video_requires_recent_heartbeat(authenticated_client, create_m
 def test_video_consumption_heartbeat_tracks_progress(authenticated_client, create_mission):
     mission = create_mission(points_value=100, mission_type="video")
     client, user = authenticated_client()
-    client.post(f"/auth/missoes/{mission.id}/iniciar/")
+    start_response = client.post(f"/auth/missoes/{mission.id}/iniciar/")
+    session_token = start_response.data["consumption_session_token"]
+    first_nonce = start_response.data["consumption_next_nonce"]
 
     first_heartbeat = client.post(
         f"/auth/missoes/{mission.id}/heartbeat/",
+        {
+            "consumption_session_token": session_token,
+            "consumption_next_nonce": first_nonce,
+        },
         format="json",
     )
 
     assert first_heartbeat.status_code == status.HTTP_200_OK
     assert first_heartbeat.data["credited_seconds"] == 0
     assert first_heartbeat.data["heartbeat_count"] == 1
+    assert first_heartbeat.data["consumption_next_nonce"] != first_nonce
 
     MissionCompletions.objects.filter(user=user, mission=mission).update(
         last_consumption_heartbeat_at=timezone.now() - timedelta(seconds=20)
     )
 
+    second_nonce = first_heartbeat.data["consumption_next_nonce"]
     second_heartbeat = client.post(
         f"/auth/missoes/{mission.id}/heartbeat/",
-        {"mark_complete": True},
+        {
+            "consumption_session_token": session_token,
+            "consumption_next_nonce": second_nonce,
+            "mark_complete": True,
+        },
         format="json",
     )
 
@@ -523,6 +535,101 @@ def test_video_consumption_heartbeat_tracks_progress(authenticated_client, creat
     assert second_heartbeat.data["credited_seconds"] > 0
     assert second_heartbeat.data["consumption_marked_complete_at"] is not None
     assert second_heartbeat.data["heartbeat_count"] == 2
+    assert second_heartbeat.data["consumption_next_nonce"] != second_nonce
+
+
+@pytest.mark.django_db
+def test_mission_detail_issues_consumption_session_for_in_progress_reading(
+    authenticated_client,
+    create_mission,
+):
+    mission = create_mission(points_value=100, mission_type="reading")
+    client, _ = authenticated_client()
+    client.post(f"/auth/missoes/{mission.id}/iniciar/")
+
+    response = client.get(f"/auth/missoes/{mission.id}/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["completion"]["consumption_session_token"]
+    assert response.data["completion"]["consumption_next_nonce"]
+
+
+@pytest.mark.django_db
+def test_video_consumption_heartbeat_rejects_replayed_nonce(
+    authenticated_client,
+    create_mission,
+):
+    mission = create_mission(points_value=100, mission_type="video")
+    client, _ = authenticated_client()
+    start_response = client.post(f"/auth/missoes/{mission.id}/iniciar/")
+    session_token = start_response.data["consumption_session_token"]
+    first_nonce = start_response.data["consumption_next_nonce"]
+
+    accepted = client.post(
+        f"/auth/missoes/{mission.id}/heartbeat/",
+        {
+            "consumption_session_token": session_token,
+            "consumption_next_nonce": first_nonce,
+        },
+        format="json",
+    )
+    assert accepted.status_code == status.HTTP_200_OK
+
+    replayed = client.post(
+        f"/auth/missoes/{mission.id}/heartbeat/",
+        {
+            "consumption_session_token": session_token,
+            "consumption_next_nonce": first_nonce,
+        },
+        format="json",
+    )
+
+    assert replayed.status_code == status.HTTP_409_CONFLICT
+    assert replayed.data["session_refresh_required"] is True
+
+
+@pytest.mark.django_db
+def test_mission_detail_refresh_invalidates_previous_consumption_session(
+    authenticated_client,
+    create_mission,
+):
+    mission = create_mission(points_value=100, mission_type="video")
+    client, _ = authenticated_client()
+    first_detail = client.get(f"/auth/missoes/{mission.id}/")
+    assert first_detail.status_code == status.HTTP_200_OK
+    assert first_detail.data["completion"] is None
+
+    start_response = client.post(f"/auth/missoes/{mission.id}/iniciar/")
+    old_session_token = start_response.data["consumption_session_token"]
+    old_nonce = start_response.data["consumption_next_nonce"]
+
+    refreshed_detail = client.get(f"/auth/missoes/{mission.id}/")
+    new_session_token = refreshed_detail.data["completion"]["consumption_session_token"]
+    new_nonce = refreshed_detail.data["completion"]["consumption_next_nonce"]
+
+    assert new_session_token != old_session_token
+    assert new_nonce != old_nonce
+
+    stale_response = client.post(
+        f"/auth/missoes/{mission.id}/heartbeat/",
+        {
+            "consumption_session_token": old_session_token,
+            "consumption_next_nonce": old_nonce,
+        },
+        format="json",
+    )
+
+    fresh_response = client.post(
+        f"/auth/missoes/{mission.id}/heartbeat/",
+        {
+            "consumption_session_token": new_session_token,
+            "consumption_next_nonce": new_nonce,
+        },
+        format="json",
+    )
+
+    assert stale_response.status_code == status.HTTP_409_CONFLICT
+    assert fresh_response.status_code == status.HTTP_200_OK
 
 
 @pytest.mark.django_db

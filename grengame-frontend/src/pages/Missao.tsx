@@ -48,6 +48,8 @@ type MissionCompletion = {
   consumption_heartbeat_count?: number;
   last_consumption_heartbeat_at?: string | null;
   consumption_marked_complete_at?: string | null;
+  consumption_session_token?: string | null;
+  consumption_next_nonce?: string | null;
 };
 
 type TrailMission = {
@@ -126,20 +128,29 @@ export default function Missao() {
             });
 
             if (startResponse.ok) {
-              await startResponse.json();
+              const startData = await startResponse.json();
               if (isMounted) {
                 setCompletion({
                   completed: false,
-                  status: "in_progress",
-                  points_earned: 0,
+                  status: startData.status ?? "in_progress",
+                  points_earned: startData.points_earned ?? 0,
                   stars_earned: 0,
-                  started_at: new Date().toISOString(),
-                  completed_at: null,
-                  consumption_validated_at: null,
-                  consumption_progress_seconds: 0,
-                  consumption_heartbeat_count: 0,
-                  last_consumption_heartbeat_at: null,
-                  consumption_marked_complete_at: null,
+                  started_at: startData.started_at ?? new Date().toISOString(),
+                  completed_at: startData.completed_at ?? null,
+                  consumption_validated_at:
+                    startData.consumption_validated_at ?? null,
+                  consumption_progress_seconds:
+                    startData.consumption_progress_seconds ?? 0,
+                  consumption_heartbeat_count:
+                    startData.consumption_heartbeat_count ?? 0,
+                  last_consumption_heartbeat_at:
+                    startData.last_consumption_heartbeat_at ?? null,
+                  consumption_marked_complete_at:
+                    startData.consumption_marked_complete_at ?? null,
+                  consumption_session_token:
+                    startData.consumption_session_token ?? null,
+                  consumption_next_nonce:
+                    startData.consumption_next_nonce ?? null,
                 });
               }
             }
@@ -238,6 +249,8 @@ export default function Missao() {
         completed_at: new Date().toISOString(),
         consumption_validated_at:
           completion?.consumption_validated_at || new Date().toISOString(),
+        consumption_session_token: null,
+        consumption_next_nonce: null,
       });
       notifyUserDataUpdated();
 

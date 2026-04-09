@@ -287,6 +287,21 @@ class MissionCompletions(models.Model):
         blank=True,
         verbose_name="Consumo marcado como concluido em",
     )
+    consumption_session_token_digest = models.CharField(
+        max_length=64,
+        blank=True,
+        verbose_name="Digest do token da sessao de consumo",
+    )
+    consumption_next_nonce_digest = models.CharField(
+        max_length=64,
+        blank=True,
+        verbose_name="Digest do proximo nonce de consumo",
+    )
+    consumption_nonce_issued_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Nonce de consumo emitido em",
+    )
     points_earned = models.IntegerField(
         default=0,
         verbose_name="Pontos Ganhos",
@@ -360,6 +375,30 @@ class MissionCompletions(models.Model):
             "credited_seconds": credited_seconds,
             "wait_seconds": 0,
         }
+
+    def issue_consumption_session(self, *, reference_time=None):
+        issued_at = reference_time or timezone.now()
+        raw_session_token = generate_session_token()
+        raw_nonce = generate_session_token(16)
+        self.consumption_session_token_digest = hash_session_token(raw_session_token)
+        self.consumption_next_nonce_digest = hash_session_token(raw_nonce)
+        self.consumption_nonce_issued_at = issued_at
+        return {
+            "consumption_session_token": raw_session_token,
+            "consumption_next_nonce": raw_nonce,
+        }
+
+    def rotate_consumption_nonce(self, *, reference_time=None):
+        issued_at = reference_time or timezone.now()
+        raw_nonce = generate_session_token(16)
+        self.consumption_next_nonce_digest = hash_session_token(raw_nonce)
+        self.consumption_nonce_issued_at = issued_at
+        return raw_nonce
+
+    def clear_consumption_session(self):
+        self.consumption_session_token_digest = ""
+        self.consumption_next_nonce_digest = ""
+        self.consumption_nonce_issued_at = None
 
 
 class WordleHintUsage(models.Model):

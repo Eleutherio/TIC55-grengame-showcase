@@ -11,6 +11,7 @@ from django.core.files.storage import default_storage
 from django.core.validators import validate_email
 from django.http import HttpResponse
 from django.urls import reverse
+from django.utils.crypto import constant_time_compare
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -283,6 +284,66 @@ def _build_mission_consumption_response(mission_completion, *, credited_seconds=
             else None
         ),
     }
+
+
+def _mission_requires_consumption_session(mission_completion):
+    return (
+        _mission_requires_consumption_validation(mission_completion.mission)
+        and mission_completion.status != "completed"
+        and mission_completion.consumption_validated_at is None
+    )
+
+
+def _issue_mission_consumption_session(mission_completion, *, reference_time=None):
+    session_payload = mission_completion.issue_consumption_session(
+        reference_time=reference_time,
+    )
+    mission_completion.save(
+        update_fields=[
+            "consumption_session_token_digest",
+            "consumption_next_nonce_digest",
+            "consumption_nonce_issued_at",
+        ]
+    )
+    return session_payload
+
+
+def _clear_mission_consumption_session(mission_completion):
+    mission_completion.clear_consumption_session()
+    mission_completion.save(
+        update_fields=[
+            "consumption_session_token_digest",
+            "consumption_next_nonce_digest",
+            "consumption_nonce_issued_at",
+        ]
+    )
+
+
+def _mission_consumption_session_matches(mission_completion, *, session_token, nonce):
+    expected_session_digest = str(mission_completion.consumption_session_token_digest or "")
+    expected_nonce_digest = str(mission_completion.consumption_next_nonce_digest or "")
+    presented_session_digest = hash_session_token(session_token)
+    presented_nonce_digest = hash_session_token(nonce)
+    return constant_time_compare(presented_session_digest, expected_session_digest) and constant_time_compare(
+        presented_nonce_digest,
+        expected_nonce_digest,
+    )
+
+
+def _serialize_mission_completion_for_response(mission_completion, *, include_consumption_session=False):
+    response_data = MissionCompletionsSerializer(mission_completion).data
+    if include_consumption_session:
+        response_data["consumption_session_token"] = getattr(
+            mission_completion,
+            "_raw_consumption_session_token",
+            None,
+        )
+        response_data["consumption_next_nonce"] = getattr(
+            mission_completion,
+            "_raw_consumption_next_nonce",
+            None,
+        )
+    return response_data
 
 
 def _build_wordle_letter_states(attempt_word, target_word):
@@ -1380,6 +1441,33 @@ class MissionRetrieveUpdateDestroyView(RetrieveUpdateDestroyAPIView):
             return visible_missions_queryset_for(self.request.user, queryset)
         return editable_missions_queryset_for(self.request.user, queryset)
 
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        response_data = serializer.data
+
+        try:
+            mission_completion = MissionCompletions.objects.get(
+                mission=instance,
+                user=request.user,
+            )
+        except MissionCompletions.DoesNotExist:
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        if (
+            _mission_requires_consumption_session(mission_completion)
+            and isinstance(response_data.get("completion"), dict)
+        ):
+            session_payload = _issue_mission_consumption_session(mission_completion)
+            response_data["completion"]["consumption_session_token"] = session_payload[
+                "consumption_session_token"
+            ]
+            response_data["completion"]["consumption_next_nonce"] = session_payload[
+                "consumption_next_nonce"
+            ]
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
 
 class MissionCompletionsListView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1433,9 +1521,22 @@ class MissionCompletionsStartView(APIView):
             points_earned=0,
             started_at=timezone.now(),
         )
-        
-        serializer = MissionCompletionsSerializer(mission_completion)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        include_consumption_session = _mission_requires_consumption_validation(mission)
+        if include_consumption_session:
+            session_payload = _issue_mission_consumption_session(mission_completion)
+            mission_completion._raw_consumption_session_token = session_payload[
+                "consumption_session_token"
+            ]
+            mission_completion._raw_consumption_next_nonce = session_payload[
+                "consumption_next_nonce"
+            ]
+
+        response_data = _serialize_mission_completion_for_response(
+            mission_completion,
+            include_consumption_session=include_consumption_session,
+        )
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
 
 class MissionConsumptionHeartbeatView(APIView):
@@ -1478,12 +1579,43 @@ class MissionConsumptionHeartbeatView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        session_token = str(request.data.get("consumption_session_token") or "").strip()
+        nonce = str(request.data.get("consumption_next_nonce") or "").strip()
+        if not session_token or not nonce:
+            return Response(
+                {
+                    "error": "Sessao de consumo invalida ou ausente. Reabra a missao.",
+                    "session_refresh_required": True,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if (
+            not mission_completion.consumption_session_token_digest
+            or not mission_completion.consumption_next_nonce_digest
+            or not _mission_consumption_session_matches(
+                mission_completion,
+                session_token=session_token,
+                nonce=nonce,
+            )
+        ):
+            return Response(
+                {
+                    "error": "Sessao de consumo invalida ou expirada. Reabra a missao.",
+                    "session_refresh_required": True,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         heartbeat_now = timezone.now()
         mark_complete = request.data.get("mark_complete") is True
         heartbeat_result = mission_completion.register_consumption_heartbeat(
             reference_time=heartbeat_now,
             min_interval_seconds=_get_mission_heartbeat_min_interval_seconds(),
             max_credit_seconds=_get_mission_heartbeat_max_credit_seconds(),
+        )
+        next_nonce = mission_completion.rotate_consumption_nonce(
+            reference_time=heartbeat_now,
         )
 
         update_fields = []
@@ -1498,6 +1630,9 @@ class MissionConsumptionHeartbeatView(APIView):
             mission_completion.consumption_marked_complete_at = heartbeat_now
             update_fields.append("consumption_marked_complete_at")
 
+        update_fields.extend(
+            ["consumption_next_nonce_digest", "consumption_nonce_issued_at"]
+        )
         if update_fields:
             mission_completion.save(update_fields=list(dict.fromkeys(update_fields)))
 
@@ -1505,6 +1640,7 @@ class MissionConsumptionHeartbeatView(APIView):
             "success": True,
             "throttled": not heartbeat_result["accepted"],
             "wait_seconds": heartbeat_result["wait_seconds"],
+            "consumption_next_nonce": next_nonce,
             **_build_mission_consumption_response(
                 mission_completion,
                 credited_seconds=heartbeat_result["credited_seconds"],
@@ -1580,8 +1716,16 @@ class MissionCompletionsCompleteView(APIView):
         mission_completion.status = 'completed'
         mission_completion.points_earned = mission_completion.mission.points_value
         mission_completion.completed_at = timezone.now()
+        mission_completion.clear_consumption_session()
         mission_completion.save(
-            update_fields=['status', 'points_earned', 'completed_at']
+            update_fields=[
+                'status',
+                'points_earned',
+                'completed_at',
+                'consumption_session_token_digest',
+                'consumption_next_nonce_digest',
+                'consumption_nonce_issued_at',
+            ]
         )
         
         # Atualizar progresso do game automaticamente
@@ -1640,6 +1784,18 @@ class MissionValidateView(APIView):
             validation_now = timezone.now()
             progress_payload = _build_mission_consumption_response(mission_completion)
 
+            if mission_completion.consumption_validated_at is not None:
+                return Response(
+                    {
+                        'success': True,
+                        'status': mission_completion.status,
+                        'ready_to_complete': True,
+                        **progress_payload,
+                        'message': 'Consumo ja validado. Agora conclua a missao.',
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
             if mission_completion.consumption_marked_complete_at is None:
                 error_message = (
                     'A leitura precisa ser percorrida até o final antes da validação.'
@@ -1683,7 +1839,15 @@ class MissionValidateView(APIView):
 
             if mission_completion.consumption_validated_at is None:
                 mission_completion.consumption_validated_at = validation_now
-                mission_completion.save(update_fields=['consumption_validated_at'])
+                mission_completion.clear_consumption_session()
+                mission_completion.save(
+                    update_fields=[
+                        'consumption_validated_at',
+                        'consumption_session_token_digest',
+                        'consumption_next_nonce_digest',
+                        'consumption_nonce_issued_at',
+                    ]
+                )
 
             return Response(
                 {

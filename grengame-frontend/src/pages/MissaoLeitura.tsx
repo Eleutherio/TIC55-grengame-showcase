@@ -26,6 +26,8 @@ type MissaoLeituraProps = {
     points_earned: number;
     consumption_progress_seconds?: number;
     consumption_marked_complete_at?: string | null;
+    consumption_session_token?: string | null;
+    consumption_next_nonce?: string | null;
   } | null;
   totalMissions: number;
 };
@@ -48,6 +50,12 @@ export default function MissaoLeitura({
   );
   const [serverProgressSeconds, setServerProgressSeconds] = useState(
     Math.max(0, completion?.consumption_progress_seconds ?? 0),
+  );
+  const [consumptionSessionToken, setConsumptionSessionToken] = useState(
+    completion?.consumption_session_token ?? null,
+  );
+  const [consumptionNextNonce, setConsumptionNextNonce] = useState(
+    completion?.consumption_next_nonce ?? null,
   );
   const [isCompleting, setIsCompleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -80,6 +88,9 @@ export default function MissaoLeitura({
   const sendConsumptionHeartbeat = useEffectEvent(
     async (markComplete = false) => {
       if (isCompleted || heartbeatInFlightRef.current) return;
+      if (!consumptionSessionToken || !consumptionNextNonce) {
+        return;
+      }
       if (
         !markComplete &&
         typeof document !== "undefined" &&
@@ -99,15 +110,27 @@ export default function MissaoLeitura({
               Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify(markComplete ? { mark_complete: true } : {}),
+            body: JSON.stringify({
+              consumption_session_token: consumptionSessionToken,
+              consumption_next_nonce: consumptionNextNonce,
+              ...(markComplete ? { mark_complete: true } : {}),
+            }),
           },
         );
 
         const data = await response.json().catch(() => null);
         if (!response.ok || !data) {
+          if (response.status === 409 && data?.session_refresh_required) {
+            setActionError(
+              "Sua sessão de consumo expirou ou foi substituída. Reabra a missão para continuar.",
+            );
+          }
           return;
         }
 
+        if (typeof data.consumption_next_nonce === "string") {
+          setConsumptionNextNonce(data.consumption_next_nonce);
+        }
         if (typeof data.progress_seconds === "number") {
           setServerProgressSeconds((current) =>
             Math.max(current, data.progress_seconds),
@@ -116,6 +139,7 @@ export default function MissaoLeitura({
         if (data.consumption_marked_complete_at) {
           setHasScrolledToEnd(true);
         }
+        setActionError(null);
       } finally {
         heartbeatInFlightRef.current = false;
       }
@@ -165,9 +189,13 @@ export default function MissaoLeitura({
     if (completion?.consumption_marked_complete_at) {
       setHasScrolledToEnd(true);
     }
+    setConsumptionSessionToken(completion?.consumption_session_token ?? null);
+    setConsumptionNextNonce(completion?.consumption_next_nonce ?? null);
   }, [
     completion?.consumption_marked_complete_at,
     completion?.consumption_progress_seconds,
+    completion?.consumption_session_token,
+    completion?.consumption_next_nonce,
   ]);
 
   useEffect(() => {
