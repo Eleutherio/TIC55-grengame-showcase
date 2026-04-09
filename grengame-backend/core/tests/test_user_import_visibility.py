@@ -135,6 +135,32 @@ def test_global_admin_cannot_create_user_with_weak_password(api_client):
 
 
 @pytest.mark.django_db
+def test_global_admin_cannot_create_user_with_html_name(api_client):
+    admin_user = User.objects.create_user(
+        username="global_admin_html_name",
+        email="global.admin.html.name@test.local",
+        password="Senha123!Admin",
+        role="admin",
+    )
+
+    api_client.force_authenticate(user=admin_user)
+    response = api_client.post(
+        "/auth/usuarios/criar/",
+        {
+            "nome": "<b>Novo Usuario</b>",
+            "email": "novo.usuario.html@test.local",
+            "password": "Senha123!Forte",
+            "role": "user",
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "texto puro" in response.json()["error"].lower()
+    assert User.objects.filter(email="novo.usuario.html@test.local").exists() is False
+
+
+@pytest.mark.django_db
 def test_global_admin_cannot_update_user_with_weak_password(api_client):
     admin_user = User.objects.create_user(
         username="global_admin_update",
@@ -162,3 +188,55 @@ def test_global_admin_cannot_update_user_with_weak_password(api_client):
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     managed_user.refresh_from_db()
     assert managed_user.check_password("Senha123!Inicial")
+
+
+@pytest.mark.django_db
+def test_temporary_admin_cannot_update_own_user_with_html_name(api_client):
+    temp_admin = User.objects.create_user(
+        username="temp_admin_html_update",
+        email="temp.admin.html.update@test.local",
+        password="Senha123!",
+        role="admin",
+        is_temporary_account=True,
+    )
+
+    api_client.force_authenticate(user=temp_admin)
+    response = api_client.post(
+        "/auth/usuarios/atualizar/",
+        {
+            "email": temp_admin.email,
+            "nome": '<img src=x onerror=alert(1)>Temp',
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "texto puro" in response.json()["error"].lower()
+
+
+@pytest.mark.django_db
+def test_global_admin_import_rejects_html_name(api_client):
+    admin_user = User.objects.create_user(
+        username="global_admin_import_html",
+        email="global.admin.import.html@test.local",
+        password="Senha123!Admin",
+        role="admin",
+    )
+
+    api_client.force_authenticate(user=admin_user)
+    response = api_client.post(
+        "/auth/usuarios/importacao/",
+        {
+            "usuarios": [
+                {
+                    "nome": "<script>alert(1)</script>Maria",
+                    "email": "maria.import.html@test.local",
+                }
+            ]
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert "texto puro" in response.json()["errors"][0]["motivo"].lower()
+    assert User.objects.filter(email="maria.import.html@test.local").exists() is False

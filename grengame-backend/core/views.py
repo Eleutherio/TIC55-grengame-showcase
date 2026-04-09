@@ -90,6 +90,7 @@ from .verification_codes import (
     hash_session_token,
 )
 from .upload_security import FileUploadSecurityError, validate_image_upload
+from .plain_text import normalize_plain_text_input
 from django.utils import timezone
 from django.db.models import Sum, Count, Min, Q
 from django.db.models.functions import Coalesce
@@ -2658,7 +2659,17 @@ class TemporaryAccessRequestView(APIView):
         purge_expired_temporary_accounts()
 
         payload = request.data if isinstance(request.data, dict) else {}
-        nome = str(payload.get("nome", "")).strip()
+        try:
+            nome = normalize_plain_text_input(
+                payload.get("nome", ""),
+                field_label="Nome",
+                max_length=150,
+            )
+        except DjangoValidationError as exc:
+            return Response(
+                {"error": f"{exc.messages[0]} Atualize a pagina e tente novamente."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         contato_email = str(payload.get("email", "")).strip().lower()
         aceite_temporario = bool(payload.get("aceite_temporario", False))
         aceite_formal = bool(payload.get("aceite_formal", False))

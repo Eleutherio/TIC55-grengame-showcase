@@ -96,6 +96,47 @@ def test_temporary_access_request_success_creates_pending_request_without_accoun
 
 
 @pytest.mark.django_db
+@override_settings(TEMPORARY_ACCESS_SELF_SERVICE_ENABLED=True)
+def test_temporary_access_request_rejects_html_in_name(api_client):
+    response = api_client.post(
+        "/auth/temporary-access/request/",
+        {
+            "nome": '<img src=x onerror=alert(1)>Maria',
+            "email": "maria.html@gmail.com",
+            "aceite_temporario": True,
+            "aceite_formal": True,
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "texto puro" in response.data["error"].lower()
+    assert TemporaryAccessRequest.objects.filter(email="maria.html@gmail.com").exists() is False
+
+
+@pytest.mark.django_db
+@override_settings(TEMPORARY_ACCESS_SELF_SERVICE_ENABLED=True)
+def test_temporary_access_request_normalizes_plain_text_name(api_client):
+    response = api_client.post(
+        "/auth/temporary-access/request/",
+        {
+            "nome": "  Maria   da   Silva  ",
+            "email": "maria.normalizada@gmail.com",
+            "aceite_temporario": True,
+            "aceite_formal": True,
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+    pending_request = TemporaryAccessRequest.objects.get(
+        email="maria.normalizada@gmail.com",
+        status=TemporaryAccessRequest.STATUS_PENDING,
+    )
+    assert pending_request.name == "Maria da Silva"
+
+
+@pytest.mark.django_db
 @override_settings(
     TEMPORARY_ACCESS_SELF_SERVICE_ENABLED=True,
     TEMPORARY_ACCESS_REVIEWER_EMAILS=("owner@example.com",),

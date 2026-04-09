@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .password_policy import get_password_validation_errors
+from .plain_text import normalize_plain_text_input
 from .temporary_access import (
     TEMP_MANAGED_USERS_LIMIT,
     can_access_admin_console,
@@ -137,7 +138,24 @@ class ImportarUsuariosView(APIView):
                 erros.append({"linha": idx, "motivo": "Linha invalida (formato incorreto)."})
                 continue
 
-            nome = str(item.get("nome", "")).strip()
+            try:
+                nome = normalize_plain_text_input(
+                    item.get("nome", ""),
+                    field_label="Nome",
+                    max_length=150,
+                )
+            except ValidationError as exc:
+                erros.append(
+                    {
+                        "linha": idx,
+                        "motivo": exc.messages[0],
+                        "email": _normalize_email_ascii(
+                            str(item.get("email", "")).strip().lower()
+                        )
+                        or None,
+                    }
+                )
+                continue
             email = _normalize_email_ascii(str(item.get("email", "")).strip().lower())
 
             if not nome or not email:
@@ -228,7 +246,14 @@ class CriarUsuarioView(APIView):
         if not isinstance(payload, dict):
             return Response({"error": "Corpo invalido."}, status=status.HTTP_400_BAD_REQUEST)
 
-        nome = str(payload.get("nome", "")).strip()
+        try:
+            nome = normalize_plain_text_input(
+                payload.get("nome", ""),
+                field_label="Nome",
+                max_length=150,
+            )
+        except ValidationError as exc:
+            return Response({"error": exc.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
         email = str(payload.get("email", "")).strip().lower()
         senha = str(payload.get("password", "")).strip()
         role = str(payload.get("role", "user")).strip() or "user"
@@ -323,8 +348,18 @@ class AtualizarUsuarioView(APIView):
         if user is None:
             return Response({"error": "Usuario nao encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
-        if isinstance(nome, str) and nome.strip():
-            user.first_name = nome.strip()
+        if nome is not None:
+            try:
+                normalized_name = normalize_plain_text_input(
+                    nome,
+                    field_label="Nome",
+                    max_length=150,
+                )
+            except ValidationError as exc:
+                return Response({"error": exc.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+
+            if normalized_name:
+                user.first_name = normalized_name
 
         if isinstance(role, str) and role.strip() in ("admin", "user"):
             requested_role = role.strip()
